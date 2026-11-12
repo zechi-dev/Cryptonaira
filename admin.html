@@ -148,7 +148,7 @@ tr:hover td{background:var(--panel2)}
 
 <script>
 'use strict';
-const API = 'https://crypto-naira.YOUR-SUBDOMAIN.workers.dev'; // ← replace with your Worker URL
+const API = 'https://cryptonaira.zechi-dev.workers.dev'; // YOUR REAL WORKER URL IS HERE
 const TOKEN_KEY = 'cn_admin_token';
 
 const $ = id => document.getElementById(id);
@@ -236,7 +236,6 @@ async function loadOverview(){
   $('overviewStats').innerHTML = cards.map(c => '<div class="stat-card"><div class="stat-label">'+c.label+'</div><div class="stat-value '+c.cls+'">'+c.value+'</div></div>').join('');
 }
 
-/* USERS */
 $('userSearchBtn').onclick = () => { currentUsersPage = 1; loadUsers(); };
 $('userSearch').addEventListener('keydown', e => { if(e.key==='Enter'){ currentUsersPage=1; loadUsers(); } });
 $('usersPrev').onclick = () => { if(currentUsersPage>1){ currentUsersPage--; loadUsers(); } };
@@ -289,7 +288,6 @@ function bindUserActions(){
   });
 }
 
-/* PAYOUTS */
 async function loadPayouts(){
   const r = await api('/admin/payouts');
   if(r.error) return;
@@ -324,7 +322,6 @@ async function loadPayouts(){
   });
 }
 
-/* MESSAGES */
 async function loadMessages(){
   const r = await api('/admin/messages');
   if(r.error) return;
@@ -347,7 +344,6 @@ $('msgSendBtn').onclick = async () => {
   loadMessages();
 };
 
-/* OFFERS */
 async function loadOffers(){
   const r = await api('/admin/offers');
   if(r.error) return;
