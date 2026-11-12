@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0B0A08">
+<title>CryptoNaira — Admin</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif&display=swap">
+<style>
+:root{--ink:#0B0A08;--panel:#14120E;--panel2:#1A1712;--line:rgba(212,167,44,.2);--hair:rgba(237,230,211,.08);--gold:#D4A72C;--bone:#EDE6D3;--mute:#9A9384;--red:#E08A7E;--green:#8FBF8A;--serif:'Instrument Serif',Georgia,serif;--sans:Inter,system-ui,sans-serif}
+*{margin:0;padding:0;box-sizing:border-box;font-family:var(--sans);-webkit-tap-highlight-color:transparent}
+body{background:#000;color:var(--bone);min-height:100vh}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.wrap{max-width:1200px;margin:0 auto;padding:24px}
+.h{font-family:var(--serif);font-size:34px;letter-spacing:2px;color:var(--bone)}
+.sub{color:var(--mute);font-size:12px;margin-top:4px;letter-spacing:1px}
+.label{color:var(--mute);font-size:12px;letter-spacing:.5px;display:block;margin-top:12px}
+.btn{background:var(--gold);color:#16110A;border:none;padding:11px 18px;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--gold);border:1px solid var(--line)}
+.btn.danger{background:transparent;color:var(--red);border:1px solid rgba(224,138,126,.3);padding:6px 12px;font-size:11px}
+.btn.small{padding:6px 12px;font-size:11px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.input{width:100%;background:var(--ink);border:1px solid var(--hair);padding:14px;border-radius:10px;color:var(--bone);font-size:14px;margin-top:6px}
+.input:focus{outline:2px solid var(--gold);outline-offset:0}
+textarea.input{resize:vertical;min-height:100px}
+#loginScreen{max-width:400px;margin:100px auto;padding:0 24px}
+.login-card{border:1px solid var(--line);background:linear-gradient(180deg,var(--panel2),var(--panel));border-radius:16px;padding:32px 28px}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding-bottom:20px;border-bottom:1px solid var(--hair);margin-bottom:24px;flex-wrap:wrap;gap:12px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--hair);margin-bottom:24px;overflow-x:auto}
+.tab{padding:12px 18px;background:transparent;border:none;color:var(--mute);font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.tab-content{display:none}.tab-content.active{display:block}
+.grid-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:24px}
+.stat-card{border:1px solid var(--line);background:linear-gradient(180deg,var(--panel2),var(--panel));border-radius:14px;padding:20px}
+.stat-label{color:var(--mute);font-size:11px;letter-spacing:.5px;text-transform:uppercase}
+.stat-value{font-family:var(--serif);font-size:38px;color:var(--bone);margin-top:8px;line-height:1}
+.stat-value.gold{color:var(--gold)}.stat-value.green{color:var(--green)}.stat-value.red{color:var(--red)}
+.table-wrap{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--panel)}
+.search-bar{padding:14px;border-bottom:1px solid var(--hair);display:flex;gap:10px}
+.search-bar .input{margin-top:0}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:12px 14px;color:var(--mute);font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--hair);background:var(--panel2)}
+td{padding:12px 14px;border-bottom:1px solid var(--hair);color:var(--bone)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--panel2)}
+.badge{padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.5px}
+.badge-active{background:rgba(143,191,138,.15);color:var(--green)}
+.badge-banned{background:rgba(224,138,126,.15);color:var(--red)}
+.badge-pending{background:rgba(212,167,44,.15);color:var(--gold)}
+.badge-paid{background:rgba(143,191,138,.15);color:var(--green)}
+.badge-rejected{background:rgba(224,138,126,.15);color:var(--red)}
+.pagination{padding:14px;display:flex;justify-content:space-between;align-items:center;color:var(--mute);font-size:12px;border-top:1px solid var(--hair)}
+.empty{padding:40px;text-align:center;color:var(--mute);font-size:13px}
+.msg-composer{border:1px solid var(--line);border-radius:14px;padding:20px;background:var(--panel);margin-bottom:20px}
+.msg-list{display:flex;flex-direction:column;gap:10px}
+.msg-item{border:1px solid var(--hair);border-radius:10px;padding:14px;background:var(--panel)}
+.msg-item-title{font-weight:600;font-size:13px;color:var(--bone)}
+.msg-item-body{color:var(--mute);font-size:12px;margin-top:6px;line-height:1.5;white-space:pre-wrap}
+.msg-item-time{color:var(--mute);font-size:10px;margin-top:8px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bone);color:#16110A;font-weight:600;font-size:13px;padding:12px 20px;border-radius:10px;z-index:999;opacity:0;pointer-events:none;transition:opacity .25s;max-width:340px;text-align:center}.toast.on{opacity:1}
+.confirm-modal{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;display:none;align-items:center;justify-content:center;padding:24px}.confirm-modal.on{display:flex}
+.confirm-box{max-width:420px;width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:24px}
+.confirm-box h3{font-family:var(--serif);font-size:22px;margin-bottom:12px}
+.confirm-box p{color:var(--mute);font-size:13px;line-height:1.5;margin-bottom:20px}
+.confirm-actions{display:flex;gap:10px;justify-content:flex-end}
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="h">CRYPTONAIRA</div>
+    <div class="sub" style="margin-bottom:24px">Admin Console</div>
+    <label class="label">Admin password</label>
+    <input class="input" id="pwInput" type="password" placeholder="Enter password" autocomplete="current-password">
+    <button class="btn" id="loginBtn" style="width:100%;margin-top:16px">Login</button>
+  </div>
+</div>
+
+<div id="adminApp" style="display:none">
+  <div class="wrap">
+    <div class="topbar">
+      <div><div class="h">CRYPTONAIRA</div><div class="sub">ADMIN CONSOLE</div></div>
+      <button class="btn ghost" id="logoutBtn">Logout</button>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="overview">Overview</button>
+      <button class="tab" data-tab="users">Users</button>
+      <button class="tab" data-tab="payouts">Payouts</button>
+      <button class="tab" data-tab="messages">Messages</button>
+      <button class="tab" data-tab="offers">Offers</button>
+    </div>
+
+    <div class="tab-content active" id="tab-overview"><div class="grid-stats" id="overviewStats"><div class="stat-card"><div class="stat-label">Loading…</div></div></div></div>
+
+    <div class="tab-content" id="tab-users">
+      <div class="table-wrap">
+        <div class="search-bar"><input class="input" id="userSearch" placeholder="Search by username or Telegram ID…"><button class="btn" id="userSearchBtn">Search</button></div>
+        <div id="usersTable"></div>
+        <div class="pagination" id="usersPagination" style="display:none"><button class="btn ghost small" id="usersPrev">← Prev</button><span id="usersPageInfo">Page 1</span><button class="btn ghost small" id="usersNext">Next →</button></div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-payouts"><div class="table-wrap"><div id="payoutsTable"></div></div></div>
+
+    <div class="tab-content" id="tab-messages">
+      <div class="msg-composer">
+        <div class="h" style="font-size:22px;margin-bottom:14px">Send broadcast</div>
+        <label class="label">Title</label>
+        <input class="input" id="msgTitle" placeholder="e.g. Payouts move to Thursday this week">
+        <label class="label">Message</label>
+        <textarea class="input" id="msgBody" placeholder="Type the message users will see in their app…"></textarea>
+        <button class="btn" id="msgSendBtn" style="margin-top:14px">Send to all users</button>
+      </div>
+      <div class="h" style="font-size:22px;margin-bottom:14px">Sent messages</div>
+      <div class="msg-list" id="msgList"></div>
+    </div>
+
+    <div class="tab-content" id="tab-offers">
+      <div class="msg-composer">
+        <div class="h" style="font-size:22px;margin-bottom:14px">Add offer</div>
+        <label class="label">Title</label>
+        <input class="input" id="offerTitle" placeholder="e.g. Watch & Earn">
+        <label class="label">Subtitle</label>
+        <input class="input" id="offerSubtitle" placeholder="e.g. 30-sec sponsored clip">
+        <label class="label">Payout (₦)</label>
+        <input class="input" id="offerPayout" placeholder="13" inputmode="numeric">
+        <label class="label">Offer URL (use {sub} for sub-ID)</label>
+        <input class="input" id="offerUrl" placeholder="https://offerwall.example/offer/1?sub1={sub}">
+        <button class="btn" id="offerAddBtn" style="margin-top:14px">Add offer</button>
+      </div>
+      <div class="h" style="font-size:22px;margin-bottom:14px">Current offers</div>
+      <div class="msg-list" id="offersList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="confirm-modal" id="confirmModal">
+  <div class="confirm-box">
+    <h3 id="confirmTitle">Confirm</h3>
+    <p id="confirmText"></p>
+    <div class="confirm-actions"><button class="btn ghost" id="confirmCancel">Cancel</button><button class="btn" id="confirmOk">Confirm</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+'use strict';
+const API = 'https://crypto-naira.YOUR-SUBDOMAIN.workers.dev'; // ← replace with your Worker URL
+const TOKEN_KEY = 'cn_admin_token';
+
+const $ = id => document.getElementById(id);
+const fmtN = n => '\u20A6' + Math.round(n||0).toLocaleString();
+const fmtTime = s => { try { return new Date(s.replace(' ','T')+'Z').toLocaleString(); } catch(e){ return s || '-'; } };
+let token = localStorage.getItem(TOKEN_KEY) || '';
+let currentUsersPage = 1;
+let toastTimer;
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('on'),2500);}
+
+async function api(path, body){
+  try {
+    const res = await fetch(API+path, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { 'X-Admin-Token': token, 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    });
+    if (res.status === 401) { logout(); return {error:'auth'}; }
+    return await res.json();
+  } catch(e){ return {error:'network'}; }
+}
+
+function logout(){ localStorage.removeItem(TOKEN_KEY); token=''; $('adminApp').style.display='none'; $('loginScreen').style.display='block'; }
+
+$('loginBtn').onclick = async () => {
+  const pw = $('pwInput').value;
+  if(!pw){ toast('Enter password'); return; }
+  $('loginBtn').disabled = true;
+  try {
+    const res = await fetch(API+'/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password: pw}) });
+    const r = await res.json();
+    if(r.error){ toast('Wrong password'); return; }
+    token = r.token; localStorage.setItem(TOKEN_KEY, token);
+    showAdmin();
+  } catch(e){ toast('Login failed'); }
+  finally { $('loginBtn').disabled = false; }
+};
+$('pwInput').addEventListener('keydown', e => { if(e.key === 'Enter') $('loginBtn').click(); });
+
+async function showAdmin(){
+  $('loginScreen').style.display='none';
+  $('adminApp').style.display='block';
+  await loadOverview();
+}
+$('logoutBtn').onclick = logout;
+
+document.querySelectorAll('.tab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    $('tab-'+t.dataset.tab).classList.add('active');
+    const tab = t.dataset.tab;
+    if(tab==='users') loadUsers();
+    if(tab==='payouts') loadPayouts();
+    if(tab==='messages') loadMessages();
+    if(tab==='offers') loadOffers();
+  };
+});
+
+let confirmResolve = null;
+function confirmModal(title, text, danger){
+  return new Promise(resolve => {
+    $('confirmTitle').textContent = title;
+    $('confirmText').textContent = text;
+    $('confirmOk').style.background = danger ? 'var(--red)' : 'var(--gold)';
+    $('confirmModal').classList.add('on');
+    confirmResolve = resolve;
+  });
+}
+$('confirmCancel').onclick = () => { $('confirmModal').classList.remove('on'); if(confirmResolve) confirmResolve(false); };
+$('confirmOk').onclick = () => { $('confirmModal').classList.remove('on'); if(confirmResolve) confirmResolve(true); };
+
+async function loadOverview(){
+  const r = await api('/admin/stats');
+  if(r.error){ $('overviewStats').innerHTML = '<div class="stat-card"><div class="stat-label">Error loading stats</div></div>'; return; }
+  const cards = [
+    { label: 'Total users', value: r.totalUsers || 0, cls: '' },
+    { label: 'Total credited', value: fmtN(r.totalCredited), cls: 'gold' },
+    { label: 'Total paid out', value: fmtN(r.totalPaid) + ' (' + (r.totalPaidCount||0) + ')', cls: 'green' },
+    { label: 'Pending payouts', value: fmtN(r.pendingPayouts) + ' (' + (r.pendingCount||0) + ')', cls: 'red' },
+    { label: 'User balances held', value: fmtN(r.currentBalance), cls: '' },
+    { label: 'Platform net', value: fmtN(r.platformNet), cls: '' }
+  ];
+  $('overviewStats').innerHTML = cards.map(c => '<div class="stat-card"><div class="stat-label">'+c.label+'</div><div class="stat-value '+c.cls+'">'+c.value+'</div></div>').join('');
+}
+
+/* USERS */
+$('userSearchBtn').onclick = () => { currentUsersPage = 1; loadUsers(); };
+$('userSearch').addEventListener('keydown', e => { if(e.key==='Enter'){ currentUsersPage=1; loadUsers(); } });
+$('usersPrev').onclick = () => { if(currentUsersPage>1){ currentUsersPage--; loadUsers(); } };
+$('usersNext').onclick = () => { currentUsersPage++; loadUsers(); };
+
+async function loadUsers(){
+  const q = $('userSearch').value.trim();
+  const r = await api('/admin/users?page='+currentUsersPage+'&q='+encodeURIComponent(q));
+  if(r.error) return;
+  if(!r.users || r.users.length === 0){
+    $('usersTable').innerHTML = '<div class="empty">No users yet.</div>';
+    $('usersPagination').style.display = 'none';
+    return;
+  }
+  let html = '<table><thead><tr><th>Username</th><th>Telegram ID</th><th>Balance</th><th>Earned</th><th>Offers</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+  r.users.forEach(u => {
+    const banned = u.banned === 1;
+    html += '<tr><td>'+(u.username||u.first_name||'-')+'</td><td>'+u.telegram_id+'</td><td>'+fmtN(u.balance)+'</td><td>'+fmtN(u.earned_total)+'</td><td>'+(u.tasks_done||0)+'</td><td><span class="badge '+(banned?'badge-banned':'badge-active')+'">'+(banned?'BANNED':'ACTIVE')+'</span></td><td><button class="btn danger" data-ban="'+u.telegram_id+'" data-banned="'+(banned?1:0)+'">'+(banned?'Unban':'Ban')+'</button> <button class="btn danger" data-del="'+u.telegram_id+'">Delete</button></td></tr>';
+  });
+  html += '</tbody></table>';
+  $('usersTable').innerHTML = html;
+  $('usersPagination').style.display = 'flex';
+  $('usersPageInfo').textContent = 'Page '+r.page+' of '+(r.pages||1);
+  bindUserActions();
+}
+
+function bindUserActions(){
+  document.querySelectorAll('#usersTable [data-ban]').forEach(b => {
+    b.onclick = async () => {
+      const uid = parseInt(b.dataset.ban);
+      const newBanned = b.dataset.banned === '1' ? 0 : 1;
+      const ok = await confirmModal(newBanned?'Ban user?':'Unban user?', newBanned?'They cannot use the app until unbanned.':'They will regain access.', true);
+      if(!ok) return;
+      const res = await api('/admin/ban', {telegram_id: uid, banned: newBanned});
+      if(res.error){ toast('Failed'); return; }
+      toast(newBanned?'User banned':'User unbanned');
+      loadUsers();
+    };
+  });
+  document.querySelectorAll('#usersTable [data-del]').forEach(b => {
+    b.onclick = async () => {
+      const uid = parseInt(b.dataset.del);
+      const ok = await confirmModal('Delete user?', 'Permanently removes the user, wallet, check-ins, referrals. Ledger kept for accounting.', true);
+      if(!ok) return;
+      const res = await api('/admin/delete', {telegram_id: uid});
+      if(res.error){ toast('Failed'); return; }
+      toast('User deleted');
+      loadUsers();
+    };
+  });
+}
+
+/* PAYOUTS */
+async function loadPayouts(){
+  const r = await api('/admin/payouts');
+  if(r.error) return;
+  if(!r.payouts || r.payouts.length === 0){ $('payoutsTable').innerHTML = '<div class="empty">No payouts yet.</div>'; return; }
+  let html = '<table><thead><tr><th>User</th><th>Amount</th><th>Bank</th><th>Account</th><th>Status</th><th>Requested</th><th>Actions</th></tr></thead><tbody>';
+  r.payouts.forEach(p => {
+    const cls = p.status==='paid'?'badge-paid':p.status==='rejected'?'badge-rejected':'badge-pending';
+    const actions = p.status==='requested'
+      ? '<button class="btn small" data-paid="'+p.id+'">Mark paid</button> <button class="btn danger" data-rejected="'+p.id+'">Reject</button>'
+      : '-';
+    html += '<tr><td>'+(p.username||p.first_name||'-')+'<br><span style="color:var(--mute);font-size:11px">'+p.telegram_id+'</span></td><td>'+fmtN(p.amount_ngn)+'</td><td>'+(p.bank_name||'-')+'</td><td>'+(p.acct_num||'-')+'<br><span style="color:var(--mute);font-size:11px">'+(p.acct_name||'')+'</span></td><td><span class="badge '+cls+'">'+p.status.toUpperCase()+'</span></td><td style="font-size:11px;color:var(--mute)">'+fmtTime(p.created_at)+'</td><td>'+actions+'</td></tr>';
+  });
+  html += '</tbody></table>';
+  $('payoutsTable').innerHTML = html;
+  document.querySelectorAll('[data-paid]').forEach(b => {
+    b.onclick = async () => {
+      const ok = await confirmModal('Mark as paid?', 'Confirm you have sent the money.', false);
+      if(!ok) return;
+      const res = await api('/admin/payout', {id: b.dataset.paid, status: 'paid'});
+      if(res.error){ toast('Failed: '+res.error); return; }
+      toast('Marked paid ✅'); loadPayouts();
+    };
+  });
+  document.querySelectorAll('[data-rejected]').forEach(b => {
+    b.onclick = async () => {
+      const ok = await confirmModal('Reject payout?', 'Amount refunded to user balance.', true);
+      if(!ok) return;
+      const res = await api('/admin/payout', {id: b.dataset.rejected, status: 'rejected'});
+      if(res.error){ toast('Failed'); return; }
+      toast('Refunded'); loadPayouts();
+    };
+  });
+}
+
+/* MESSAGES */
+async function loadMessages(){
+  const r = await api('/admin/messages');
+  if(r.error) return;
+  if(!r.messages || r.messages.length === 0){ $('msgList').innerHTML = '<div class="empty">No messages sent yet.</div>'; return; }
+  $('msgList').innerHTML = r.messages.map(m => '<div class="msg-item"><div class="msg-item-title">'+(m.title||'Update')+'</div><div class="msg-item-body">'+m.body+'</div><div class="msg-item-time">'+fmtTime(m.created_at)+'</div></div>').join('');
+}
+
+$('msgSendBtn').onclick = async () => {
+  const title = $('msgTitle').value.trim();
+  const body = $('msgBody').value.trim();
+  if(!body){ toast('Message body required'); return; }
+  const ok = await confirmModal('Send to all users?', 'Every user will see this in their app.', false);
+  if(!ok) return;
+  $('msgSendBtn').disabled = true;
+  const res = await api('/admin/message', {title: title || 'Update', body});
+  $('msgSendBtn').disabled = false;
+  if(res.error){ toast('Failed: '+res.error); return; }
+  toast('Sent ✅');
+  $('msgTitle').value = ''; $('msgBody').value = '';
+  loadMessages();
+};
+
+/* OFFERS */
+async function loadOffers(){
+  const r = await api('/admin/offers');
+  if(r.error) return;
+  if(!r.offers || r.offers.length === 0){ $('offersList').innerHTML = '<div class="empty">No offers yet.</div>'; return; }
+  $('offersList').innerHTML = r.offers.map(o => '<div class="msg-item"><div class="msg-item-title">'+o.title+' — '+fmtN(o.payout_ngn)+'</div><div class="msg-item-body">'+(o.subtitle||'')+'\n'+o.url_template+'</div><div class="msg-item-time">'+(o.active?'ACTIVE':'INACTIVE')+'</div></div>').join('');
+}
+
+$('offerAddBtn').onclick = async () => {
+  const title = $('offerTitle').value.trim();
+  const subtitle = $('offerSubtitle').value.trim();
+  const payout = parseInt($('offerPayout').value) || 0;
+  const url = $('offerUrl').value.trim();
+  if(!title || !url || payout <= 0){ toast('Fill title, payout, and URL'); return; }
+  $('offerAddBtn').disabled = true;
+  const res = await api('/admin/offer/add', {title, subtitle, payout_ngn: payout, url_template: url});
+  $('offerAddBtn').disabled = false;
+  if(res.error){ toast('Failed: '+res.error); return; }
+  toast('Offer added ✅');
+  $('offerTitle').value=''; $('offerSubtitle').value=''; $('offerPayout').value=''; $('offerUrl').value='';
+  loadOffers();
+};
+
+if(token) showAdmin();
+</script>
+</body>
+</html>
