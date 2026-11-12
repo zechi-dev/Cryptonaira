@@ -8,9 +8,7 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif&display=swap">
 <style>
-/* ===== 1. TOKENS ===== */
 :root{--ink:#0B0A08;--panel:#14120E;--panel2:#1A1712;--line:rgba(212,167,44,.2);--hair:rgba(237,230,211,.08);--gold:#D4A72C;--bone:#EDE6D3;--mute:#9A9384;--red:#E08A7E;--green:#8FBF8A;--serif:'Instrument Serif',Georgia,serif;--sans:Inter,system-ui,sans-serif}
-/* ===== 2. BASE ===== */
 *{margin:0;padding:0;box-sizing:border-box;font-family:var(--sans);-webkit-tap-highlight-color:transparent}
 body{background:#000;display:flex;justify-content:center;color:var(--bone)}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
@@ -19,7 +17,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .h{font-family:var(--serif);font-size:30px;margin:26px 0 4px}
 .sub,.meta{color:var(--mute);font-size:12px;line-height:1.6}.meta{font-size:11px}
 .label{color:var(--mute);font-size:12px}
-/* ===== 3. COMPONENTS ===== */
 .card{border:1px solid var(--line);background:linear-gradient(180deg,var(--panel2),var(--panel));border-radius:16px;padding:22px 20px;margin-top:18px}
 .row{margin-top:10px;background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
 .amount{font-family:var(--serif);font-size:54px;margin:14px 0 8px;line-height:1}
@@ -40,7 +37,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .banner{display:none;margin:12px 20px 0;padding:10px 12px;border-radius:10px;font-size:11px;background:rgba(212,167,44,.08);border:1px solid var(--line);color:var(--gold)}
 .ref-link{margin-top:14px;background:var(--ink);border:1px solid var(--hair);border-radius:10px;padding:12px;font-size:12px;color:var(--mute);word-break:break-all}
 .link{display:block;width:100%;text-align:left;padding:14px 16px;border:1px solid var(--hair);border-left:2px solid var(--gold);border-radius:12px;background:var(--panel);margin-top:14px}
-/* header + nav */
 .header{padding:16px 20px;display:flex;gap:12px;align-items:center;position:sticky;top:0;background:rgba(11,10,8,.95);z-index:10;border-bottom:1px solid var(--hair)}
 .header > svg{width:38px;height:38px;flex:none;display:block}
 .user{flex:1;text-align:left}.brand{font-family:var(--serif);font-size:21px;letter-spacing:4px}.uid{color:var(--mute);font-size:11px;margin-top:3px}
@@ -49,12 +45,10 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .bell i{position:absolute;top:8px;right:8px;width:8px;height:8px;background:var(--red);border-radius:50%;display:none}.bell i.on{display:block}
 .nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:rgba(14,12,9,.97);border-top:1px solid var(--hair);display:grid;grid-template-columns:repeat(4,1fr);padding:8px 0 calc(10px + env(safe-area-inset-bottom));z-index:20}
 .nav button{color:#7A7466;font-size:11px;padding:6px 0;min-height:48px}.nav button.on{color:var(--gold)}
-/* bank picker */
 .pick{position:relative}
 .list{position:absolute;top:100%;left:0;right:0;max-height:240px;overflow:auto;background:var(--panel2);border:1px solid var(--line);border-radius:12px;margin-top:6px;z-index:30;display:none}.list.on{display:block}
 .list button{display:block;width:100%;text-align:left;padding:13px 14px;font-size:13px;border-bottom:1px solid var(--hair)}.list button:hover,.list button:focus{background:var(--panel)}
 .list p{padding:12px 14px;color:var(--mute);font-size:12px}
-/* sheet, toast, loader */
 .sheet{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;display:none;align-items:flex-end;justify-content:center}.sheet.on{display:flex}
 .panel{background:var(--ink);border-top:1px solid var(--line);width:100%;max-width:430px;max-height:80vh;border-radius:20px 20px 0 0;padding:20px;overflow:auto}
 .toast{position:fixed;left:50%;bottom:104px;transform:translateX(-50%);background:var(--bone);color:#16110A;font-weight:600;font-size:12px;padding:10px 16px;border-radius:10px;z-index:150;opacity:0;pointer-events:none;transition:opacity .25s;max-width:340px;text-align:center}.toast.on{opacity:1}
@@ -110,7 +104,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 </header>
 <div class="banner" id="banner"></div>
 
-<!-- HOME -->
 <section id="home" class="screen active">
   <div class="card">
     <div class="label">Total balance</div>
@@ -124,14 +117,12 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <button class="link" data-go="offers"><b>Play games and finish tasks</b><p class="sub">Open the Offers tab to start earning</p></button>
 </section>
 
-<!-- OFFERS -->
 <section id="offers" class="screen">
   <div class="h">Offers</div><div class="sub">Pick a task and complete it to earn naira.</div>
   <div id="taskGrid"></div>
   <div class="card" id="offersEmpty"><div class="label">Offers coming soon</div><p class="meta" style="margin-top:8px">Your offer walls will appear here once they are connected.</p></div>
 </section>
 
-<!-- INVITE -->
 <section id="referral" class="screen">
   <div class="h">Invite people</div><div class="sub" id="refRule"></div>
   <div class="card">
@@ -142,7 +133,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   </div>
 </section>
 
-<!-- WALLET -->
 <section id="wallet" class="screen">
   <div class="h">Wallet</div><div class="sub" id="walletRule"></div>
   <div class="card">
@@ -166,7 +156,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <div class="h" style="font-size:22px;margin-top:28px">Activity</div><div id="hist"></div>
 </section>
 
-<!-- PROFILE -->
 <section id="profile" class="screen">
   <div class="h">Profile</div>
   <div class="card"><div class="row" style="margin:0"><span class="meta">User</span><b id="pName">-</b></div><div class="row"><span class="meta">ID</span><b id="pUid">-</b></div><div class="row"><span class="meta">Tasks completed</span><b id="pTasks">0</b></div></div>
@@ -355,7 +344,7 @@ document.addEventListener('click', e => {
   const banner = $('banner');
   if (!LIVE) { banner.style.display = 'block'; banner.textContent = 'Preview mode: no server is connected, so nothing is saved online.'; }
   else if (!(tg && tg.initData)) { banner.style.display = 'block'; banner.textContent = 'Please open this app from inside Telegram.'; }
-  try { await refresh(); } finally { hideLoader(); }
+  try { await refresh(); } catch (e) { console.error(e); }
   if (LIVE) setInterval(refresh, 30000);
 })();
 </script>
