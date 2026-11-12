@@ -5,15 +5,7 @@ compatibility_date = "2025-01-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "crypto_naira"
-database_id = "REPLACE_WITH_YOUR_D1_ID"
+database_id = "81782908-c682-40f8-a840-5dade0879cd0"
 
 [vars]
 APP_ORIGIN = "*"
-
-# Set as Worker secrets (wrangler secret put):
-# BOT_TOKEN         → main bot token from @BotFather
-# POSTBACK_SECRET   → any 32+ char random string
-# ADMIN_PASSWORD    → your admin console password
-# ADMIN_SECRET      → any 32+ char random string
-# NETWORK_URL       → (optional, later) your affiliate network Worker URL
-# NETWORK_SECRET    → (optional, later) shared secret with the network
