@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0B0A08">
+<title>CryptoNaira</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif&display=swap">
+<style>
+/* ===== 1. TOKENS ===== */
+:root{--ink:#0B0A08;--panel:#14120E;--panel2:#1A1712;--line:rgba(212,167,44,.2);--hair:rgba(237,230,211,.08);--gold:#D4A72C;--bone:#EDE6D3;--mute:#9A9384;--red:#E08A7E;--green:#8FBF8A;--serif:'Instrument Serif',Georgia,serif;--sans:Inter,system-ui,sans-serif}
+/* ===== 2. BASE ===== */
+*{margin:0;padding:0;box-sizing:border-box;font-family:var(--sans);-webkit-tap-highlight-color:transparent}
+body{background:#000;display:flex;justify-content:center;color:var(--bone)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.app{width:100%;max-width:430px;min-height:100vh;background:var(--ink);padding-bottom:120px}
+.screen{display:none;padding:0 20px}.screen.active{display:block}
+.h{font-family:var(--serif);font-size:30px;margin:26px 0 4px}
+.sub,.meta{color:var(--mute);font-size:12px;line-height:1.6}.meta{font-size:11px}
+.label{color:var(--mute);font-size:12px}
+/* ===== 3. COMPONENTS ===== */
+.card{border:1px solid var(--line);background:linear-gradient(180deg,var(--panel2),var(--panel));border-radius:16px;padding:22px 20px;margin-top:18px}
+.row{margin-top:10px;background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.amount{font-family:var(--serif);font-size:54px;margin:14px 0 8px;line-height:1}
+.grid2{display:grid;grid-template-columns:1fr 1fr;margin-top:20px;border-top:1px solid var(--hair);padding-top:16px}
+.stat+.stat{border-left:1px solid var(--hair);padding-left:18px}
+.stat b{display:block;font-family:var(--serif);font-size:26px;font-weight:400;margin-top:2px}
+.btn{width:100%;margin-top:16px;background:var(--gold);color:#16110A;padding:15px;border-radius:12px;font-weight:700;font-size:14px}
+.btn.ghost{background:none;color:var(--gold);border:1px solid var(--line)}
+.btn:disabled{background:var(--panel2);color:var(--mute);border:0;cursor:not-allowed}
+.input{display:block;width:100%;margin-top:12px;background:var(--ink);border:1px solid var(--hair);padding:14px;border-radius:10px;color:var(--bone);font-size:14px}
+.input:focus{outline:2px solid var(--gold);outline-offset:0}.input.err{border-color:var(--red)}
+.fl{display:block;margin-top:14px;font-size:12px;color:var(--mute)}.fl+.input{margin-top:6px}
+.progress{height:4px;background:var(--hair);border-radius:2px;margin-top:14px;overflow:hidden}.progress i{display:block;height:100%;width:0;background:var(--gold);transition:width .6s}
+.dots{display:flex;gap:6px;margin:14px 0 2px}.dot{flex:1;height:6px;border-radius:3px;background:var(--hair)}.dot.on{background:var(--gold)}
+.badge{padding:5px 11px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid var(--line);color:var(--gold);white-space:nowrap}
+.badge.ok{color:var(--green);border-color:rgba(143,191,138,.3)}.badge.no{color:var(--red);border-color:rgba(224,138,126,.3)}
+.warn{margin-top:14px;background:rgba(224,138,126,.07);border:1px solid rgba(224,138,126,.2);color:var(--red);padding:11px 12px;border-radius:10px;font-size:11px;line-height:1.5}
+.banner{display:none;margin:12px 20px 0;padding:10px 12px;border-radius:10px;font-size:11px;background:rgba(212,167,44,.08);border:1px solid var(--line);color:var(--gold)}
+.ref-link{margin-top:14px;background:var(--ink);border:1px solid var(--hair);border-radius:10px;padding:12px;font-size:12px;color:var(--mute);word-break:break-all}
+.link{display:block;width:100%;text-align:left;padding:14px 16px;border:1px solid var(--hair);border-left:2px solid var(--gold);border-radius:12px;background:var(--panel);margin-top:14px}
+/* header + nav */
+.header{padding:16px 20px;display:flex;gap:12px;align-items:center;position:sticky;top:0;background:rgba(11,10,8,.95);z-index:10;border-bottom:1px solid var(--hair)}
+.header > svg{width:38px;height:38px;flex:none;display:block}
+.user{flex:1;text-align:left}.brand{font-family:var(--serif);font-size:21px;letter-spacing:4px}.uid{color:var(--mute);font-size:11px;margin-top:3px}
+.bell{position:relative;width:42px;height:42px;border-radius:50%;background:var(--panel);border:1px solid var(--hair);display:flex;align-items:center;justify-content:center}
+.bell svg{width:18px;height:18px;stroke:var(--bone);fill:none;stroke-width:2}
+.bell i{position:absolute;top:8px;right:8px;width:8px;height:8px;background:var(--red);border-radius:50%;display:none}.bell i.on{display:block}
+.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:rgba(14,12,9,.97);border-top:1px solid var(--hair);display:grid;grid-template-columns:repeat(4,1fr);padding:8px 0 calc(10px + env(safe-area-inset-bottom));z-index:20}
+.nav button{color:#7A7466;font-size:11px;padding:6px 0;min-height:48px}.nav button.on{color:var(--gold)}
+/* bank picker */
+.pick{position:relative}
+.list{position:absolute;top:100%;left:0;right:0;max-height:240px;overflow:auto;background:var(--panel2);border:1px solid var(--line);border-radius:12px;margin-top:6px;z-index:30;display:none}.list.on{display:block}
+.list button{display:block;width:100%;text-align:left;padding:13px 14px;font-size:13px;border-bottom:1px solid var(--hair)}.list button:hover,.list button:focus{background:var(--panel)}
+.list p{padding:12px 14px;color:var(--mute);font-size:12px}
+/* sheet, toast, loader */
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;display:none;align-items:flex-end;justify-content:center}.sheet.on{display:flex}
+.panel{background:var(--ink);border-top:1px solid var(--line);width:100%;max-width:430px;max-height:80vh;border-radius:20px 20px 0 0;padding:20px;overflow:auto}
+.toast{position:fixed;left:50%;bottom:104px;transform:translateX(-50%);background:var(--bone);color:#16110A;font-weight:600;font-size:12px;padding:10px 16px;border-radius:10px;z-index:150;opacity:0;pointer-events:none;transition:opacity .25s;max-width:340px;text-align:center}.toast.on{opacity:1}
+#loader{position:fixed;inset:0;background:var(--ink);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s}#loader.off{opacity:0;pointer-events:none}
+#loader > svg{width:150px;height:150px;display:block;filter:drop-shadow(0 0 30px rgba(212,167,44,.35))}
+#loader b{margin-top:24px;font-family:var(--serif);font-weight:400;font-size:34px;letter-spacing:9px;padding-left:9px}
+#loader p{color:var(--mute);font-size:12px;margin-top:8px}
+.bar{width:120px;height:1px;background:var(--hair);margin-top:28px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--gold);animation:fill 2s forwards}@keyframes fill{to{width:100%}}
+</style>
+</head>
+<body>
+
+<div id="loader">
+  <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <radialGradient id="gLoader" cx="35%" cy="30%" r="70%">
+        <stop offset="0" stop-color="#FFF2B8"/>
+        <stop offset=".3" stop-color="#F6D75A"/>
+        <stop offset=".6" stop-color="#D4A72C"/>
+        <stop offset=".9" stop-color="#8A6310"/>
+        <stop offset="1" stop-color="#5A4008"/>
+      </radialGradient>
+    </defs>
+    <circle cx="60" cy="60" r="54" fill="url(#gLoader)" stroke="#3A2800" stroke-width="1.5"/>
+    <circle cx="60" cy="60" r="45" fill="none" stroke="#3A2800" stroke-opacity=".4" stroke-dasharray="1 3"/>
+    <ellipse cx="42" cy="32" rx="18" ry="10" fill="#fff" opacity=".25"/>
+    <text x="60" y="76" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="54" fill="#1A1102">&#8358;</text>
+  </svg>
+  <b>CRYPTONAIRA</b>
+  <p>Earn naira on your own time</p>
+  <div class="bar"><i></i></div>
+</div>
+
+<div class="app">
+<header class="header">
+  <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <radialGradient id="gHeader" cx="35%" cy="30%" r="70%">
+        <stop offset="0" stop-color="#FFF2B8"/>
+        <stop offset=".3" stop-color="#F6D75A"/>
+        <stop offset=".6" stop-color="#D4A72C"/>
+        <stop offset=".9" stop-color="#8A6310"/>
+        <stop offset="1" stop-color="#5A4008"/>
+      </radialGradient>
+    </defs>
+    <circle cx="60" cy="60" r="54" fill="url(#gHeader)" stroke="#3A2800" stroke-width="1.5"/>
+    <circle cx="60" cy="60" r="45" fill="none" stroke="#3A2800" stroke-opacity=".4" stroke-dasharray="1 3"/>
+    <ellipse cx="42" cy="32" rx="18" ry="10" fill="#fff" opacity=".25"/>
+    <text x="60" y="76" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="54" fill="#1A1102">&#8358;</text>
+  </svg>
+  <button class="user" data-go="profile" aria-label="Open profile"><div class="brand">CRYPTONAIRA</div><div class="uid" id="uidText">Loading</div></button>
+  <button class="bell" id="bellBtn" aria-label="Messages"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg><i id="bellDot"></i></button>
+</header>
+<div class="banner" id="banner"></div>
+
+<!-- HOME -->
+<section id="home" class="screen active">
+  <div class="card">
+    <div class="label">Total balance</div>
+    <div class="amount" id="balHome">&#8358;0</div>
+    <div class="meta" id="payHint"></div>
+    <div class="progress"><i id="bar"></i></div>
+    <div class="grid2"><div class="stat"><span class="label">Tasks completed</span><b id="tasksHome">0</b></div><div class="stat"><span class="label">Check-in streak</span><b id="streakHome">0/7</b></div></div>
+  </div>
+  <p class="sub" id="paydayHome" style="margin-top:12px"></p>
+  <div class="card"><div class="label">Daily check-in</div><div class="dots" id="dots"></div><p class="meta" id="checkText" style="margin-top:10px"></p><button class="btn" id="checkBtn">Check in</button></div>
+  <button class="link" data-go="offers"><b>Play games and finish tasks</b><p class="sub">Open the Offers tab to start earning</p></button>
+</section>
+
+<!-- OFFERS -->
+<section id="offers" class="screen">
+  <div class="h">Offers</div><div class="sub">Pick a task and complete it to earn naira.</div>
+  <div id="taskGrid"></div>
+  <div class="card" id="offersEmpty"><div class="label">Offers coming soon</div><p class="meta" style="margin-top:8px">Your offer walls will appear here once they are connected.</p></div>
+</section>
+
+<!-- INVITE -->
+<section id="referral" class="screen">
+  <div class="h">Invite people</div><div class="sub" id="refRule"></div>
+  <div class="card">
+    <div class="label">Your invite link</div><div class="ref-link" id="refLink"></div>
+    <button class="btn" id="copyBtn">Copy link</button>
+    <div class="row"><span class="meta">Waiting to qualify</span><b id="refPending">0</b></div>
+    <div class="row"><span class="meta">Qualified</span><b id="refQualified">0</b></div>
+  </div>
+</section>
+
+<!-- WALLET -->
+<section id="wallet" class="screen">
+  <div class="h">Wallet</div><div class="sub" id="walletRule"></div>
+  <div class="card">
+    <div class="label">Balance</div><div class="amount" id="balWallet" style="font-size:44px">&#8358;0</div><div class="meta" id="balUsd"></div>
+    <div class="label" style="margin-top:20px">Payout account</div>
+    <label class="fl" for="bankSearch">Bank</label>
+    <div class="pick">
+      <input class="input" id="bankSearch" placeholder="Search your bank" autocomplete="off">
+      <button class="input" id="bankChosen" style="display:none;text-align:left"></button>
+      <div class="list" id="bankList" role="listbox"></div>
+    </div>
+    <label class="fl" for="acctNum">Account number</label>
+    <input class="input" id="acctNum" placeholder="10 digits" maxlength="10" inputmode="numeric" autocomplete="off">
+    <div class="meta" id="acctErr" style="color:var(--red);margin-top:6px;display:none">Account number must be exactly 10 digits</div>
+    <label class="fl" for="acctName">Account name</label>
+    <input class="input" id="acctName" placeholder="Name exactly as on your bank account" autocomplete="off">
+    <button class="btn" id="walletBtn">Save account</button>
+    <button class="btn ghost" id="withdrawBtn">Request payout</button>
+    <div class="warn">Check your details carefully. Money sent to a wrong account cannot be recovered.</div>
+  </div>
+  <div class="h" style="font-size:22px;margin-top:28px">Activity</div><div id="hist"></div>
+</section>
+
+<!-- PROFILE -->
+<section id="profile" class="screen">
+  <div class="h">Profile</div>
+  <div class="card"><div class="row" style="margin:0"><span class="meta">User</span><b id="pName">-</b></div><div class="row"><span class="meta">ID</span><b id="pUid">-</b></div><div class="row"><span class="meta">Tasks completed</span><b id="pTasks">0</b></div></div>
+</section>
+</div>
+
+<nav class="nav" aria-label="Main">
+  <button class="on" data-go="home">Home</button><button data-go="offers">Offers</button><button data-go="referral">Invite</button><button data-go="wallet">Wallet</button>
+</nav>
+<div class="sheet" id="sheet"><div class="panel"><div class="row" style="margin:0 0 14px;background:none;border:0;padding:0"><div class="h" style="margin:0;font-size:22px">Messages</div><button id="sheetClose" aria-label="Close" style="font-size:22px;color:var(--mute)">&#10005;</button></div><div id="msgList"></div></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+'use strict';
+const CONFIG = {
+  API_URL: '',
+  BOT: 'Cryptonaira_bot',
+  NGN_PER_USD: 1300,
+  MIN_PAYOUT: 2000,
+  PAYOUT_DAYS_UTC: [3, 6],
+  PAYOUT_HOUR_UTC: 11,
+  CHECKIN_DAILY: 13,
+  CHECKIN_BONUS: 52,
+  REFERRAL: { bonus: 100, activateAt: 650, recurring: 5, recurringUnlock: 100, recurringMonths: 12 }
+};
+const LIVE = !!CONFIG.API_URL;
+
+const $ = id => document.getElementById(id);
+const tg = window.Telegram && Telegram.WebApp;
+try { if (tg) { tg.ready(); tg.expand(); } } catch (e) {}
+const N = n => '\u20A6' + Math.round(n || 0).toLocaleString();
+const USD = n => '$' + ((n || 0) / CONFIG.NGN_PER_USD).toFixed(2);
+const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+const clear = e => { while (e.firstChild) e.removeChild(e.firstChild); };
+let toastTimer; const toast = m => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
+function hideLoader() { const l = $('loader'); if (!l || l.classList.contains('off')) return; l.classList.add('off'); setTimeout(() => { l.style.display = 'none'; }, 500); }
+setTimeout(hideLoader, 3000);
+
+function nextPayout(from = new Date()) {
+  const d = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate(), CONFIG.PAYOUT_HOUR_UTC));
+  for (let i = 0; i < 14; i++) {
+    const day = d.getUTCDay();
+    if (CONFIG.PAYOUT_DAYS_UTC.includes(day) && d > from) return d;
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return d;
+}
+
+const BANKS = ['Access Bank|Diamond','Citibank Nigeria|Citi','Ecobank Nigeria|Eco','Fidelity Bank','First Bank of Nigeria|FirstBank','First City Monument Bank|FCMB','Globus Bank','Guaranty Trust Bank|GTBank|GTCO','Heritage Bank','Jaiz Bank','Keystone Bank','Lotus Bank','Optimus Bank','Parallex Bank','Polaris Bank|Skye','Premium Trust Bank|PremiumTrust','Providus Bank','Signature Bank','Stanbic IBTC Bank|Stanbic','Standard Chartered Bank','Sterling Bank','SunTrust Bank','Taj Bank','Titan Trust Bank|Titan','Union Bank of Nigeria|Union','United Bank for Africa|UBA','Unity Bank','Wema Bank|ALAT','Zenith Bank',
+  'OPay|Paycom','PalmPay','Moniepoint MFB|Moniepoint','Kuda Microfinance Bank|Kuda','Carbon|Paylater','FairMoney Microfinance Bank|FairMoney','VFD Microfinance Bank|VFD','Rubies Microfinance Bank|Rubies|Highstreet','Sparkle Microfinance Bank|Sparkle','Eyowo','GoMoney','9 Payment Service Bank|9PSB','MTN MoMo PSB|MoMo','Airtel SmartCash PSB|SmartCash','Safe Haven MFB|SafeHaven']
+  .map(s => { const p = s.split('|'); return { name: p[0], key: s.toLowerCase().replace(/\|/g, ' ') }; })
+  .sort((a, b) => a.name.localeCompare(b.name));
+
+async function call(path, body) {
+  try {
+    const r = await fetch(CONFIG.API_URL + path, { method: body ? 'POST' : 'GET', headers: { 'Authorization': 'tma ' + ((tg && tg.initData) || ''), 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    return await r.json();
+  } catch (e) { return { error: 'network' }; }
+}
+let UID = '0';
+const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem('cn_' + k + '_' + UID)) || d; } catch (e) { return d; } }, set: (k, v) => localStorage.setItem('cn_' + k + '_' + UID, JSON.stringify(v)) };
+const dayKey = (off = 0) => { const d = new Date(); d.setUTCDate(d.getUTCDate() - off); return d.toISOString().slice(0, 10); };
+
+const Data = LIVE ? {
+  me: () => call('/api/me'), checkin: () => call('/api/checkin', {}), saveAccount: a => call('/api/wallet', a),
+  withdraw: () => call('/api/withdraw', {}), offers: () => call('/api/offers'), click: id => call('/api/click', { offerId: id }),
+  messages: () => call('/api/messages'), markRead: () => call('/api/messages/read', {})
+} : {
+  async me() {
+    const s = store.get('stats', { earned: 0, streak: 0, last: null });
+    if (s.last && s.last !== dayKey() && s.last !== dayKey(1) && s.streak > 0) { s.streak = 0; store.set('stats', s); }
+    return { uid: UID, username: (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.username) || 'Guest', balance: s.earned, tasks_done: 0, streak: s.streak, last_checkin: s.last, account: store.get('account', null), history: [], referrals: {}, unread: 0 };
+  },
+  async checkin() {
+    const s = store.get('stats', { earned: 0, streak: 0, last: null });
+    if (s.last === dayKey()) return { error: 'already' };
+    let st = s.last === dayKey(1) ? s.streak : 0; if (st >= 7) st = 0; st += 1;
+    const amount = st === 7 ? CONFIG.CHECKIN_BONUS : CONFIG.CHECKIN_DAILY;
+    store.set('stats', { earned: s.earned + amount, streak: st, last: dayKey() });
+    return { ok: true, amount, streak: st };
+  },
+  async saveAccount(a) { store.set('account', a); return { ok: true }; },
+  async withdraw() { return { error: 'preview' }; }, async offers() { return { offers: [] }; }, async click() { return { error: 'preview' }; },
+  async messages() { return { messages: [] }; }, async markRead() { return {}; }
+};
+
+let me = null, chosenBank = null;
+function render() {
+  if (!me || me.error) return;
+  const bal = me.balance || 0, done = me.last_checkin === dayKey(), acct = me.account;
+  const next = nextPayout(), days = Math.ceil((next - new Date()) / 86400000);
+  const dayName = next.toLocaleDateString(undefined, { weekday: 'long' });
+  $('uidText').textContent = (me.username || 'User') + ' \u2022 ID ' + (me.uid || '-');
+  $('balHome').textContent = $('balWallet').textContent = N(bal);
+  $('balUsd').textContent = '\u2248 ' + USD(bal);
+  $('bar').style.width = Math.min(100, bal / CONFIG.MIN_PAYOUT * 100) + '%';
+  $('payHint').textContent = bal >= CONFIG.MIN_PAYOUT ? 'You can request a payout.' : N(CONFIG.MIN_PAYOUT - bal) + ' more to reach the ' + N(CONFIG.MIN_PAYOUT) + ' minimum.';
+  $('paydayHome').textContent = 'Next payout: ' + dayName + ' ' + next.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' at 12 PM WAT (' + days + (days === 1 ? ' day)' : ' days)');
+  $('walletRule').textContent = 'Minimum ' + N(CONFIG.MIN_PAYOUT) + '. Payouts every Wednesday & Saturday, 12 PM WAT.';
+  $('tasksHome').textContent = $('pTasks').textContent = me.tasks_done || 0;
+  $('streakHome').textContent = (me.streak || 0) + '/7';
+  $('pName').textContent = me.username || 'User'; $('pUid').textContent = me.uid || '-';
+  const dots = $('dots'); clear(dots); for (let i = 0; i < 7; i++) dots.appendChild(h('i', 'dot' + (i < (me.streak || 0) ? ' on' : '')));
+  $('checkText').textContent = 'Check in daily to earn ' + N(CONFIG.CHECKIN_DAILY) + '. Reach day 7 and it pays ' + N(CONFIG.CHECKIN_BONUS) + ' \u2014 ' + N(CONFIG.CHECKIN_BONUS + CONFIG.CHECKIN_DAILY * 6) + ' for the full week. Miss a day and the streak restarts.';
+  $('checkBtn').disabled = done; $('checkBtn').textContent = done ? 'Checked in today' : 'Check in';
+  $('refRule').textContent = 'Earn ' + N(CONFIG.REFERRAL.bonus) + ' when a friend joins and earns ' + N(CONFIG.REFERRAL.activateAt) + ' (' + USD(CONFIG.REFERRAL.activateAt) + '). After ' + CONFIG.REFERRAL.recurringUnlock + ' activated referrals, unlock ' + N(CONFIG.REFERRAL.recurring) + ' per friend withdrawal for ' + CONFIG.REFERRAL.recurringMonths + ' months.';
+  $('refLink').textContent = 'https://t.me/' + CONFIG.BOT + '?startapp=' + me.uid;
+  $('refPending').textContent = (me.referrals && me.referrals.pending) || 0; $('refQualified').textContent = (me.referrals && me.referrals.qualified) || 0;
+  if (acct && !chosenBank) { chooseBank(acct.bankName); $('acctNum').value = acct.acctNum || ''; $('acctName').value = acct.acctName || ''; }
+  $('withdrawBtn').disabled = !(acct && bal >= CONFIG.MIN_PAYOUT);
+  const hist = $('hist'); clear(hist);
+  if (!(me.history || []).length) { const c = h('div', 'card'); c.appendChild(h('div', 'meta', 'No activity yet.')); hist.appendChild(c); }
+  (me.history || []).forEach(x => { const r = h('div', 'row'); r.appendChild(h('span', 'meta', String(x.reason || ''))); const st = x.status === 'rejected' ? ' no' : x.status === 'requested' ? '' : ' ok'; r.appendChild(h('span', 'badge' + st, ((x.delta || 0) >= 0 ? '+' : '') + N(x.delta))); hist.appendChild(r); });
+  $('bellDot').classList.toggle('on', (me.unread || 0) > 0);
+}
+async function refresh() { const f = await Data.me(); if (f && !f.error) { me = f; render(); } else if (f && f.error) toast('Could not reach the server'); }
+
+let offersLoaded = false;
+async function loadOffers() {
+  const r = await Data.offers(), list = (r && r.offers) || [], grid = $('taskGrid'); clear(grid);
+  $('offersEmpty').style.display = list.length ? 'none' : 'block'; offersLoaded = true;
+  list.forEach(o => {
+    const b = h('button', 'row'); b.style.width = '100%'; b.style.textAlign = 'left';
+    const t = h('div'); t.appendChild(h('b', '', String(o.title || ''))); t.appendChild(h('div', 'meta', String(o.subtitle || ''))); b.appendChild(t); b.appendChild(h('span', 'badge', '+' + N(o.payout_ngn)));
+    b.onclick = async () => { const r = await Data.click(o.id); if (r.error || !/^https:\/\//.test(r.url || '')) return toast('Could not open this offer'); tg && tg.openLink ? tg.openLink(r.url) : window.open(r.url, '_blank'); };
+    grid.appendChild(b);
+  });
+}
+
+function chooseBank(name) { chosenBank = name; $('bankSearch').style.display = 'none'; const c = $('bankChosen'); c.style.display = 'block'; c.textContent = name; $('bankList').classList.remove('on'); }
+function showBanks(q) {
+  const list = $('bankList'); clear(list); const f = (q || '').trim().toLowerCase();
+  const hits = BANKS.filter(b => !f || b.key.includes(f));
+  hits.forEach(b => { const x = h('button', '', b.name); x.type = 'button'; x.setAttribute('role', 'option'); x.onclick = () => chooseBank(b.name); list.appendChild(x); });
+  if (!hits.length) list.appendChild(h('p', '', 'No bank found. Check the spelling.'));
+  list.classList.add('on');
+}
+$('bankSearch').addEventListener('focus', () => showBanks(''));
+$('bankSearch').addEventListener('input', e => showBanks(e.target.value));
+$('bankChosen').onclick = () => { $('bankChosen').style.display = 'none'; const s = $('bankSearch'); s.style.display = 'block'; s.value = ''; s.focus(); };
+document.addEventListener('click', e => { if (!e.target.closest('.pick')) $('bankList').classList.remove('on'); });
+$('acctNum').addEventListener('input', e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10); const bad = e.target.value.length > 0 && e.target.value.length < 10; $('acctErr').style.display = bad ? 'block' : 'none'; e.target.classList.toggle('err', bad); });
+
+$('checkBtn').onclick = async () => {
+  $('checkBtn').disabled = true; const r = await Data.checkin();
+  if (r.error === 'already') toast('Already checked in today');
+  else if (r.error) toast('Check-in failed');
+  else if (r.streak === 7) toast('7-day streak! +' + N(r.amount));
+  else if (r.amount > 0) toast('Day ' + r.streak + ' of 7 \u2014 +' + N(r.amount));
+  else toast('Day ' + r.streak + ' of 7 \u2705');
+  await refresh();
+};
+$('walletBtn').onclick = async () => {
+  const num = $('acctNum').value.trim(), name = $('acctName').value.trim();
+  if (!chosenBank) return toast('Choose your bank first');
+  if (!/^\d{10}$/.test(num)) { $('acctErr').style.display = 'block'; return toast('Account number must be 10 digits'); }
+  if (name.length < 3) return toast('Enter the name on your account');
+  $('walletBtn').disabled = true; const r = await Data.saveAccount({ bankName: chosenBank, acctNum: num, acctName: name }); $('walletBtn').disabled = false;
+  if (r.error) return toast('Could not save: ' + r.error);
+  toast('Account saved'); await refresh();
+};
+$('withdrawBtn').onclick = async () => {
+  $('withdrawBtn').disabled = true; const r = await Data.withdraw();
+  const msg = { min: 'Minimum payout is ' + N(CONFIG.MIN_PAYOUT), wallet: 'Save your bank account first', pending: 'You already have a payout waiting', preview: 'Payouts start after launch' }[r.error];
+  if (msg) toast(msg); else if (r.error) toast('Could not request payout'); else toast('Payout requested. Paid on the next Wed or Sat.');
+  await refresh();
+};
+$('copyBtn').onclick = async () => { try { await navigator.clipboard.writeText($('refLink').textContent); } catch (e) {} toast('Link copied'); };
+$('bellBtn').onclick = async () => {
+  const r = await Data.messages(), list = (r && r.messages) || [], box = $('msgList'); clear(box);
+  if (!list.length) box.appendChild(h('p', 'sub', 'No messages yet.'));
+  list.forEach(m => { const c = h('div', 'row'); c.style.display = 'block'; c.appendChild(h('b', '', String(m.title || ''))); const b = h('div', 'meta', String(m.body || '')); b.style.whiteSpace = 'pre-wrap'; c.appendChild(b); box.appendChild(c); });
+  $('sheet').classList.add('on'); $('bellDot').classList.remove('on'); Data.markRead();
+};
+$('sheetClose').onclick = () => $('sheet').classList.remove('on');
+$('sheet').onclick = e => { if (e.target === $('sheet')) $('sheet').classList.remove('on'); };
+document.addEventListener('click', e => {
+  const go = e.target.closest('[data-go]'); if (!go) return; const id = go.dataset.go;
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
+  document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('on', b.dataset.go === id));
+  window.scrollTo(0, 0); if (id === 'offers' && !offersLoaded) loadOffers();
+});
+
+(async function boot() {
+  const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user; if (u && u.id) UID = String(u.id);
+  const banner = $('banner');
+  if (!LIVE) { banner.style.display = 'block'; banner.textContent = 'Preview mode: no server is connected, so nothing is saved online.'; }
+  else if (!(tg && tg.initData)) { banner.style.display = 'block'; banner.textContent = 'Please open this app from inside Telegram.'; }
+  try { await refresh(); } finally { hideLoader(); }
+  if (LIVE) setInterval(refresh, 30000);
+})();
+</script>
+</body>
+</html>
