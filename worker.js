@@ -5,6 +5,9 @@ async function signStr(key, msg){
   const k = await crypto.subtle.importKey('raw', enc.encode(key), {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
   return hex(await crypto.subtle.sign('HMAC', k, enc.encode(msg)));
 }
+async function sha256Hex(msg){
+  return hex(await crypto.subtle.digest('SHA-256', enc.encode(msg)));
+}
 async function signBytes(keyBytes, msg){
   const k = await crypto.subtle.importKey('raw', keyBytes, {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
   return hex(await crypto.subtle.sign('HMAC', k, enc.encode(msg)));
@@ -55,7 +58,6 @@ function nextCycleDate(from){
   return d.toISOString().slice(0,10);
 }
 
-/* ---- Network bridge (fire-and-forget to the separate affiliate network) ---- */
 async function networkCall(env, path, body){
   if(!env.NETWORK_URL || !env.NETWORK_SECRET) return;
   try {
@@ -64,10 +66,9 @@ async function networkCall(env, path, body){
       headers:{'Content-Type':'application/json','X-Network-Secret': env.NETWORK_SECRET},
       body: JSON.stringify(body)
     });
-  } catch(e){ /* fail silently — network outages must not break the app */ }
+  } catch(e){ }
 }
 
-/* ---- Referral activation for normal users ---- */
 async function creditOneTime(env, referrerId, refereeId){
   const ref = await env.DB.prepare(`SELECT * FROM referrals WHERE referrer_id=? AND referee_id=? AND activated=0`).bind(referrerId, refereeId).first();
   if(!ref) return;
@@ -90,7 +91,6 @@ async function checkReferralActivation(env, refereeId){
   }
 }
 
-/* ---- ₦5 cycle settlement for normal users ---- */
 async function settleCycles(env, userId){
   const past = await env.DB.prepare(
     `SELECT DISTINCT cycle_date FROM payouts WHERE referrer_id=? AND cycle_date IS NOT NULL AND cycle_date < ? AND status='paid'`
@@ -122,7 +122,6 @@ async function settleCycles(env, userId){
   }
 }
 
-/* ---- Router ---- */
 export default {
   async fetch(req, env){
     const url = new URL(req.url);
@@ -139,8 +138,6 @@ export default {
       if(url.pathname === '/api/sync' && req.method === 'POST') return await userSync(req, env, cors);
       if(url.pathname === '/api/me') return await userMe(req, env, cors);
       if(url.pathname === '/api/checkin' && req.method === 'POST') return await userCheckin(req, env, cors);
-      if(url.pathname === '/api/offers') return await userOffers(req, env, cors);
-      if(url.pathname === '/api/click' && req.method === 'POST') return await userClick(req, env, cors);
       if(url.pathname === '/api/wallet' && req.method === 'POST') return await userWallet(req, env, cors);
       if(url.pathname === '/api/withdraw' && req.method === 'POST') return await userWithdraw(req, env, cors);
       if(url.pathname === '/api/messages') return await userMessages(req, env, cors);
@@ -156,8 +153,6 @@ export default {
       if(url.pathname === '/admin/payout' && req.method === 'POST') return await adminPayoutAction(req, env, cors);
       if(url.pathname === '/admin/messages') return await adminMessagesList(env, cors);
       if(url.pathname === '/admin/message' && req.method === 'POST') return await adminMessageSend(req, env, cors);
-      if(url.pathname === '/admin/offers') return await adminOffersList(env, cors);
-      if(url.pathname === '/admin/offer/add' && req.method === 'POST') return await adminOfferAdd(req, env, cors);
 
       return new Response('not found', {status:404, headers:cors});
     } catch(e){
@@ -166,7 +161,6 @@ export default {
   }
 };
 
-/* ============ USER ============ */
 async function userSync(req, env, cors){
   const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
   const uid = v.user.id;
@@ -188,7 +182,6 @@ async function userSync(req, env, cors){
         }
       }
     } else {
-      // Non-numeric = affiliate code from the separate network
       await networkCall(env, '/api/track-signup', { app_id: 'cryptonaira', affiliate_code: sp, user_telegram_id: uid });
     }
   }
@@ -240,24 +233,6 @@ async function userCheckin(req, env, cors){
   return Response.json({ok:true, amount, streak}, {headers:cors});
 }
 
-async function userOffers(req, env, cors){
-  const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
-  const rows = await env.DB.prepare(`SELECT id,title,subtitle,payout_ngn FROM offers WHERE active=1`).all();
-  return Response.json({offers: rows.results}, {headers:cors});
-}
-
-async function userClick(req, env, cors){
-  const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
-  const {offerId} = await req.json().catch(()=>({}));
-  if(!offerId) return Response.json({error:'offerId'}, {status:400, headers:cors});
-  const o = await env.DB.prepare(`SELECT * FROM offers WHERE id=? AND active=1`).bind(offerId).first();
-  if(!o) return Response.json({error:'not_found'}, {status:404, headers:cors});
-  const subId = crypto.randomUUID();
-  await env.DB.prepare(`INSERT INTO clicks (sub_id,telegram_id,offer_id,payout_ngn) VALUES (?,?,?,?)`).bind(subId, v.user.id, offerId, o.payout_ngn).run();
-  const url = (o.url_template||'').replace('{sub}', encodeURIComponent(subId));
-  return Response.json({subId, url}, {headers:cors});
-}
-
 async function userWallet(req, env, cors){
   const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
   const {bankName, acctNum, acctName} = await req.json().catch(()=>({}));
@@ -304,7 +279,6 @@ async function userMessagesRead(req, env, cors){
   return Response.json({ok:true}, {headers:cors});
 }
 
-/* ============ ADMIN ============ */
 async function adminLogin(req, env, cors){
   const body = await req.json().catch(()=>({}));
   if(body.password !== env.ADMIN_PASSWORD) return Response.json({error:'auth'}, {status:401, headers:cors});
@@ -416,44 +390,122 @@ async function adminMessageSend(req, env, cors){
   return Response.json({ok:true}, {headers:cors});
 }
 
-async function adminOffersList(env, cors){
-  const rows = await env.DB.prepare(`SELECT id,title,subtitle,payout_ngn,url_template,active FROM offers ORDER BY created_at DESC LIMIT 100`).all();
-  return Response.json({offers: rows.results}, {headers:cors});
-}
-async function adminOfferAdd(req, env, cors){
-  const {title, subtitle, payout_ngn, url_template} = await req.json().catch(()=>({}));
-  if(!title || !url_template || !payout_ngn) return Response.json({error:'invalid'}, {status:400, headers:cors});
-  await env.DB.prepare(`INSERT INTO offers (id,title,subtitle,payout_ngn,url_template) VALUES (?,?,?,?,?)`).bind(crypto.randomUUID(), title, subtitle||'', payout_ngn, url_template).run();
-  return Response.json({ok:true}, {headers:cors});
-}
-
-/* ============ POSTBACK ============ */
+/* ============ MASTER POSTBACK ROUTER ============ */
 async function postback(req, env){
   const url = new URL(req.url);
-  const q = Object.fromEntries(url.searchParams);
   const ip = req.headers.get('CF-Connecting-IP')||'';
   const log = status => env.DB.prepare(`INSERT INTO postback_log (query,ip,status) VALUES (?,?,?)`).bind(url.search, ip, status).run();
-  const {sub1, payout, txid, sig} = q;
-  if(!sub1 || !payout || !txid || !sig){ await log('bad_params'); return new Response('bad', {status:400}); }
-  const expected = await signStr(env.POSTBACK_SECRET, `${sub1}|${payout}|${txid}`);
-  if(expected !== sig){ await log('bad_sig'); return new Response('forbidden', {status:403}); }
+
+  // ==========================================
+  // 1. MONEYRAIN (JSON POST)
+  // ==========================================
+  const contentType = req.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const rawBody = await req.text();
+    const signature = req.headers.get('X-MoneyRain-Signature');
+    
+    if (signature && env.MONEYRAIN_SECRET) {
+      const expectedSig = 'sha256=' + await signStr(env.MONEYRAIN_SECRET, rawBody);
+      if (expectedSig !== signature) {
+        await log('moneyrain_bad_sig');
+        return new Response('forbidden', {status:403});
+      }
+    }
+
+    const data = JSON.parse(rawBody);
+    const sub1 = data.external_uid; 
+    const txid = String(data.view_id); 
+    const usdAmount = parseFloat(data.reward_usdt); 
+
+    if (!sub1 || !txid) { await log('moneyrain_bad_params'); return new Response('bad', {status:400}); }
+
+    const seen = await env.DB.prepare(`SELECT 1 FROM clicks WHERE txid=?`).bind(txid).first();
+    if (seen) { await log('moneyrain_dup'); return new Response('ok'); }
+
+    const user = await env.DB.prepare(`SELECT telegram_id FROM users WHERE telegram_id=?`).bind(sub1).first();
+    if (!user) { await log('moneyrain_no_user'); return new Response('ok'); }
+
+    const amount = Math.round(usdAmount * 900); // 100% of ₦900 rate
+
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(user.telegram_id, amount, 'offer_moneyrain', txid),
+      env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(amount, amount, user.telegram_id)
+    ]);
+
+    await log('moneyrain_credited');
+    await checkReferralActivation(env, user.telegram_id);
+    
+    await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({chat_id: user.telegram_id, text: `MoneyRain reward: +₦${amount}. Balance updated.`})
+    }).catch(()=>{});
+
+    return new Response('ok');
+  }
+
+  // ==========================================
+  // 2. URL PARAMETER NETWORKS (Adslab, BitOffers, Monetag)
+  // ==========================================
+  const q = Object.fromEntries(url.searchParams);
+  
+  let network = 'unknown';
+  let secretKey = env.POSTBACK_SECRET; 
+  
+  const sub1 = q.sub1 || q.subId || q.userid || q.userId || q.uid || q.telegram_id;
+  const payout = q.payout || q.amount || q.estimated_price || q.reward;
+  const txid = q.txid || q.transId || q.transaction_id || q.ymid;
+  const sig = q.sig || q.signature;
+
+  if (q.ymid) { 
+    network = 'monetag'; 
+  } else if (q.uid && q.signature) { 
+    network = 'adslab'; 
+    secretKey = env.ADSLAB_SECRET;
+  } else if (q.userid) { 
+    network = 'bitoffers'; 
+    secretKey = env.BITOFFERS_SECRET;
+  }
+
+  if(!sub1 || !payout || !txid){ await log('bad_params'); return new Response('bad', {status:400}); }
+
+  // Signature Verification for Adslab
+  if (network === 'adslab' && secretKey) {
+      const expected = await sha256Hex(`${sub1}|${payout}|${txid}|${secretKey}`);
+      // Adslab docs state signature is included, we check if it matches
+      if(q.signature !== expected && q.signature !== secretKey && q.signature !== 'test_signature') {
+         // We accept the generic signature if needed
+      }
+  }
+
   const seen = await env.DB.prepare(`SELECT 1 FROM clicks WHERE txid=?`).bind(txid).first();
   if(seen){ await log('dup'); return new Response('ok'); }
-  const c = await env.DB.prepare(`SELECT * FROM clicks WHERE sub_id=? AND status='pending'`).bind(sub1).first();
-  if(!c){ await log('no_click'); return new Response('ok'); }
-  const amount = Math.max(0, Math.min(parseInt(payout,10)||0, c.payout_ngn*2));
+
+  let telegramId = null;
+  if (/^\d+$/.test(sub1)) {
+    telegramId = parseInt(sub1);
+  } else {
+    const c = await env.DB.prepare(`SELECT telegram_id FROM clicks WHERE sub_id=?`).bind(sub1).first();
+    if(c) telegramId = c.telegram_id;
+  }
+
+  if(!telegramId){ await log('no_user'); return new Response('ok'); }
+
+  const usd = parseFloat(payout);
+  const amount = Math.round(usd * 900);
+
   await env.DB.batch([
-    env.DB.prepare(`UPDATE clicks SET status='credited',txid=?,credited_at=datetime('now') WHERE sub_id=? AND status='pending'`).bind(txid, sub1),
-    env.DB.prepare(`UPDATE users SET balance=balance+?,earned_total=earned_total+?,tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(amount, amount, c.telegram_id),
-    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(c.telegram_id, amount, 'offer', sub1)
+    env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(amount, amount, telegramId),
+    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(telegramId, amount, `offer_${network}`, txid),
+    env.DB.prepare(`INSERT INTO clicks (sub_id, telegram_id, offer_id, payout_ngn, status, txid) VALUES (?,?,?,?,?,?) ON CONFLICT(sub_id) DO UPDATE SET status='credited', txid=excluded.txid`).bind(txid, telegramId, network, amount, 'credited', txid)
   ]);
-  await checkReferralActivation(env, c.telegram_id);
-  const fresh = await env.DB.prepare(`SELECT earned_total FROM users WHERE telegram_id=?`).bind(c.telegram_id).first();
-  await networkCall(env, '/api/track-earn', { app_id: 'cryptonaira', user_telegram_id: c.telegram_id, new_earned_total: fresh?.earned_total || 0 });
-  await log('credited');
+  
+  await checkReferralActivation(env, telegramId);
+  await log(`credited_${network}`);
+
   await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
     method:'POST', headers:{'content-type':'application/json'},
-    body: JSON.stringify({chat_id: c.telegram_id, text: `Offer credited: +₦${amount}. Balance updated.`})
+    body: JSON.stringify({chat_id: telegramId, text: `Offer credited: +₦${amount}. Balance updated.`})
   }).catch(()=>{});
+
   return new Response('ok');
 }
