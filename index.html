@@ -314,15 +314,12 @@ function render() {
   (me.history || []).forEach(x => { const r = h('div', 'row'); r.appendChild(h('span', 'meta', String(x.reason || ''))); const st = x.status === 'rejected' ? ' no' : x.status === 'requested' ? '' : ' ok'; r.appendChild(h('span', 'badge' + st, ((x.delta || 0) >= 0 ? '+' : '') + N(x.delta))); hist.appendChild(r); });
   $('bellDot').classList.toggle('on', (me.unread || 0) > 0);
 
-  // --- INJECT YOUR EXACT IFRAMES ---
   if(me.uid && me.uid !== '0') {
-      // 1. MoneyRain (Exact Code)
       $('moneyrain-container').innerHTML = `<iframe src="https://offerwall.moneyrain.top/embed.php?pub=2431&uid=${me.uid}" width="360" height="360" style="border:0;border-radius:8px;overflow:hidden" loading="lazy"></iframe>`;
       
-      // 2. BitOffers (Exact Code)
+      // BITOFFERS KEY FIXED BELOW: zero instead of O at the end
       $('bitoffers-container').innerHTML = `<iframe style="width:100%;height:800px;border:0;padding:0;margin:0;" scrolling="yes" frameborder="0" src="https://bitsoffers.com/offerwall/?userid=${me.uid}&key=mZHdhpSQ4jcyov5bFDk0"></iframe>`;
       
-      // 3. Adslab (Exact Code)
       $('adslab-container').innerHTML = `<iframe src="https://adslab.me/task-EkPzIkTBkGcc/${me.uid}" width="100%" height="800px" style="border: none; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);"></iframe>`;
   }
 }
