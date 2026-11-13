@@ -1,4 +1,4 @@
-name = "crypto-naira"
+name = "cryptonaira"
 main = "worker.js"
 compatibility_date = "2025-01-01"
 
