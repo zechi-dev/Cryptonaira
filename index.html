@@ -5,10 +5,27 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0B0A08">
 <title>CryptoNaira</title>
-<!-- VERIFICATION TAGS ADDED HERE -->
 <meta name="website-verification" content="6af6bca4265a1d467ca92dce">
 <meta name="OctoClix" content="RFNF5gNl6e">
-<!-- END VERIFICATION TAGS -->
+
+<!-- MONETAG SDK -->
+<script src='//libtl.com/sdk.js' data-zone='12253468' data-sdk='show_12253468'></script>
+<!-- ADSLAB SDK -->
+<script>
+  const tg = window.Telegram?.WebApp;
+  tg?.ready();
+  const userId = tg?.initDataUnsafe?.user?.id || "guest";
+  window.ADSLAB_INT = 'int-MavtWyIIqg18'; 
+  window.ADSLAB_USER = String(userId);            
+  (function () {
+    var s = document.createElement('script');
+    s.src = 'https://adslab.me/api/sdk.js';
+    s.async = true;
+    document.head.appendChild(s);
+  })();
+</script>
+<!-- END SDKS -->
+
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif&display=swap">
 <style>
@@ -22,7 +39,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .sub,.meta{color:var(--mute);font-size:12px;line-height:1.6}.meta{font-size:11px}
 .label{color:var(--mute);font-size:12px}
 .card{border:1px solid var(--line);background:linear-gradient(180deg,var(--panel2),var(--panel));border-radius:16px;padding:22px 20px;margin-top:18px}
-.row{margin-top:10px;background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.row{margin-top:10px;background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer}
 .amount{font-family:var(--serif);font-size:54px;margin:14px 0 8px;line-height:1}
 .grid2{display:grid;grid-template-columns:1fr 1fr;margin-top:20px;border-top:1px solid var(--hair);padding-top:16px}
 .stat+.stat{border-left:1px solid var(--hair);padding-left:18px}
@@ -43,7 +60,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .link{display:block;width:100%;text-align:left;padding:14px 16px;border:1px solid var(--hair);border-left:2px solid var(--gold);border-radius:12px;background:var(--panel);margin-top:14px}
 .header{padding:16px 20px;display:flex;gap:12px;align-items:center;position:sticky;top:0;background:rgba(11,10,8,.95);z-index:10;border-bottom:1px solid var(--hair)}
 .header > svg{width:38px;height:38px;flex:none;display:block}
-.user{flex:1;text-align:left}.brand{font-family:var(--serif);font-size:21px;letter-spacing:4px}.uid{color:var(--mute);font-size:11px;margin-top:3px}
+.user{flex:1;text-align:left}.brand-text{font-family:var(--serif);font-size:21px;letter-spacing:4px}.uid{color:var(--mute);font-size:11px;margin-top:3px}
 .bell{position:relative;width:42px;height:42px;border-radius:50%;background:var(--panel);border:1px solid var(--hair);display:flex;align-items:center;justify-content:center}
 .bell svg{width:18px;height:18px;stroke:var(--bone);fill:none;stroke-width:2}
 .bell i{position:absolute;top:8px;right:8px;width:8px;height:8px;background:var(--red);border-radius:50%;display:none}.bell i.on{display:block}
@@ -61,6 +78,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 #loader b{margin-top:24px;font-family:var(--serif);font-weight:400;font-size:34px;letter-spacing:9px;padding-left:9px}
 #loader p{color:var(--mute);font-size:12px;margin-top:8px}
 .bar{width:120px;height:1px;background:var(--hair);margin-top:28px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--gold);animation:fill 2s forwards}@keyframes fill{to{width:100%}}
+.sec-title{font-family:var(--serif);font-size:20px;color:var(--gold);margin:24px 0 10px;border-bottom:1px solid var(--line);padding-bottom:8px;}
 </style>
 </head>
 <body>
@@ -95,7 +113,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
     <ellipse cx="42" cy="32" rx="18" ry="10" fill="#fff" opacity=".25"/>
     <text x="60" y="76" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="54" fill="#1A1102">&#8358;</text>
   </svg>
-  <button class="user" data-go="profile" aria-label="Open profile"><div class="brand">CRYPTONAIRA</div><div class="uid" id="uidText">Loading</div></button>
+  <button class="user" data-go="profile" aria-label="Open profile"><div class="brand-text">CRYPTONAIRA</div><div class="uid" id="uidText">Loading</div></button>
   <button class="bell" id="bellBtn" aria-label="Messages"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg><i id="bellDot"></i></button>
 </header>
 <div class="banner" id="banner"></div>
@@ -115,8 +133,49 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 <section id="offers" class="screen">
   <div class="h">Offers</div><div class="sub">Pick a task and complete it to earn naira.</div>
-  <div id="taskGrid"></div>
-  <div class="card" id="offersEmpty"><div class="label">Offers coming soon</div><p class="meta" style="margin-top:8px">Your offer walls will appear here once they are connected.</p></div>
+  
+  <!-- INSTANT ADS (SDK) -->
+  <div class="sec-title">Instant Ads</div>
+  
+  <div class="card" style="border-color:var(--gold);">
+      <div class="label" style="color:var(--gold);">Watch & Earn (Monetag)</div>
+      <p class="meta" style="margin-top:8px; margin-bottom: 16px;">Watch a short video ad to earn instant Naira.</p>
+      <button class="btn" id="monetagBtn">Watch Ad Now</button>
+  </div>
+
+  <div class="card" style="border-color:var(--gold);">
+      <div class="label" style="color:var(--gold);">Sponsor Ads (Adslab)</div>
+      <p class="meta" style="margin-top:8px; margin-bottom: 16px;">View a sponsored message to earn Naira.</p>
+      <button class="btn" id="adslabBtn">View Ad Now</button>
+  </div>
+
+  <!-- OFFERWALLS (DIRECT LINKS) -->
+  <div class="sec-title">Offerwalls</div>
+  
+  <div class="row" onclick="openWall('moneyrain')">
+    <div>
+      <b>MoneyRain Tasks</b>
+      <div class="meta">PTC, Autosurf, YouTube & more</div>
+    </div>
+    <span class="badge">Open</span>
+  </div>
+
+  <div class="row" onclick="openWall('bitoffers')">
+    <div>
+      <b>BitOffers Tasks</b>
+      <div class="meta">Complete tasks and surveys</div>
+    </div>
+    <span class="badge">Open</span>
+  </div>
+
+  <div class="row" onclick="openWall('adslab')">
+    <div>
+      <b>Adslab Tasks</b>
+      <div class="meta">High-paying offers</div>
+    </div>
+    <span class="badge">Open</span>
+  </div>
+
 </section>
 
 <section id="referral" class="screen">
@@ -169,7 +228,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 const CONFIG = {
   API_URL: 'https://cryptonaira.zechi-dev.workers.dev',
   BOT: 'Cryptonaira_bot',
-  NGN_PER_USD: 1300,
+  NGN_PER_USD: 900, // YOUR SECRET MARGIN RATE
   MIN_PAYOUT: 2000,
   PAYOUT_DAYS_UTC: [3, 6],
   PAYOUT_HOUR_UTC: 11,
@@ -217,8 +276,7 @@ const dayKey = (off = 0) => { const d = new Date(); d.setUTCDate(d.getUTCDate() 
 
 const Data = LIVE ? {
   me: () => call('/api/me'), checkin: () => call('/api/checkin', {}), saveAccount: a => call('/api/wallet', a),
-  withdraw: () => call('/api/withdraw', {}), offers: () => call('/api/offers'), click: id => call('/api/click', { offerId: id }),
-  messages: () => call('/api/messages'), markRead: () => call('/api/messages/read', {})
+  withdraw: () => call('/api/withdraw', {}), messages: () => call('/api/messages'), markRead: () => call('/api/messages/read', {})
 } : {
   async me() {
     const s = store.get('stats', { earned: 0, streak: 0, last: null });
@@ -234,8 +292,7 @@ const Data = LIVE ? {
     return { ok: true, amount, streak: st };
   },
   async saveAccount(a) { store.set('account', a); return { ok: true }; },
-  async withdraw() { return { error: 'preview' }; }, async offers() { return { offers: [] }; }, async click() { return { error: 'preview' }; },
-  async messages() { return { messages: [] }; }, async markRead() { return {}; }
+  async withdraw() { return { error: 'preview' }; }, async messages() { return { messages: [] }; }, async markRead() { return {}; }
 };
 
 let me = null, chosenBank = null;
@@ -269,16 +326,15 @@ function render() {
 }
 async function refresh() { const f = await Data.me(); if (f && !f.error) { me = f; render(); } else if (f && f.error) toast('Could not reach the server'); }
 
-let offersLoaded = false;
-async function loadOffers() {
-  const r = await Data.offers(), list = (r && r.offers) || [], grid = $('taskGrid'); clear(grid);
-  $('offersEmpty').style.display = list.length ? 'none' : 'block'; offersLoaded = true;
-  list.forEach(o => {
-    const b = h('button', 'row'); b.style.width = '100%'; b.style.textAlign = 'left';
-    const t = h('div'); t.appendChild(h('b', '', String(o.title || ''))); t.appendChild(h('div', 'meta', String(o.subtitle || ''))); b.appendChild(t); b.appendChild(h('span', 'badge', '+' + N(o.payout_ngn)));
-    b.onclick = async () => { const r = await Data.click(o.id); if (r.error || !/^https:\/\//.test(r.url || '')) return toast('Could not open this offer'); tg && tg.openLink ? tg.openLink(r.url) : window.open(r.url, '_blank'); };
-    grid.appendChild(b);
-  });
+// Open Direct Links
+function openWall(type) {
+  if (!me || !me.uid) return toast('Please wait for your ID to load');
+  let url = '';
+  if (type === 'moneyrain') url = `https://offerwall.moneyrain.top/wall.php?pub=2431&uid=${me.uid}`;
+  if (type === 'bitoffers') url = `https://bitsoffers.com/offerwall/?userid=${me.uid}&key=mZHdhpSQ4jcyov5bFDk0`;
+  if (type === 'adslab') url = `https://adslab.me/task-EkPzIkTBkGcc/${me.uid}`;
+  
+  if (tg && tg.openLink) tg.openLink(url); else window.open(url, '_blank');
 }
 
 function chooseBank(name) { chosenBank = name; $('bankSearch').style.display = 'none'; const c = $('bankChosen'); c.style.display = 'block'; c.textContent = name; $('bankList').classList.remove('on'); }
@@ -332,8 +388,31 @@ document.addEventListener('click', e => {
   const go = e.target.closest('[data-go]'); if (!go) return; const id = go.dataset.go;
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
   document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('on', b.dataset.go === id));
-  window.scrollTo(0, 0); if (id === 'offers' && !offersLoaded) loadOffers();
+  window.scrollTo(0, 0);
 });
+
+// --- MONETAG REWARDED AD ---
+$('monetagBtn').onclick = async () => {
+  if(typeof show_12253468 !== 'function') return toast('Ad system is loading. Please wait.');
+  $('monetagBtn').disabled = true; $('monetagBtn').textContent = 'Loading Ad...';
+  show_12253468().then(() => {
+    toast('Ad finished! Crediting shortly...');
+    setTimeout(async () => { await refresh(); $('monetagBtn').disabled = false; $('monetagBtn').textContent = 'Watch Ad Now'; }, 3000);
+  }).catch(e => {
+    toast('Ad was skipped or failed to load.'); $('monetagBtn').disabled = false; $('monetagBtn').textContent = 'Watch Ad Now';
+  });
+};
+
+// --- ADSLAB INTERSTITIAL AD ---
+$('adslabBtn').onclick = () => {
+  if (window.adslabShowInterstitial) {
+    window.adslabShowInterstitial();
+    toast('Ad opened! Crediting after completion...');
+    setTimeout(async () => { await refresh(); }, 5000);
+  } else {
+    toast('Ad system is loading. Please wait.');
+  }
+};
 
 (async function boot() {
   const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user; if (u && u.id) UID = String(u.id);
