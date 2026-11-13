@@ -8,16 +8,20 @@
 <meta name="website-verification" content="6af6bca4265a1d467ca92dce">
 <meta name="OctoClix" content="RFNF5gNl6e">
 
+<!-- TELEGRAM WEBAPP MUST LOAD FIRST -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
 <!-- MONETAG SDK -->
 <script src='//libtl.com/sdk.js' data-zone='12253468' data-sdk='show_12253468'></script>
-<!-- ADSLAB SDK -->
+
+<!-- ADSLAB SDK (WRAPPED IN AN IIFE TO PREVENT VARIABLE CRASHES) -->
 <script>
-  const tg = window.Telegram?.WebApp;
-  tg?.ready();
-  const userId = tg?.initDataUnsafe?.user?.id || "guest";
-  window.ADSLAB_INT = 'int-MavtWyIIqg18'; 
-  window.ADSLAB_USER = String(userId);            
-  (function () {
+  (function() {
+    var tgApp = window.Telegram?.WebApp;
+    tgApp?.ready();
+    var userId = tgApp?.initDataUnsafe?.user?.id || "guest";
+    window.ADSLAB_INT = 'int-MavtWyIIqg18'; 
+    window.ADSLAB_USER = String(userId);            
     var s = document.createElement('script');
     s.src = 'https://adslab.me/api/sdk.js';
     s.async = true;
@@ -26,7 +30,6 @@
 </script>
 <!-- END SDKS -->
 
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif&display=swap">
 <style>
 :root{--ink:#0B0A08;--panel:#14120E;--panel2:#1A1712;--line:rgba(212,167,44,.2);--hair:rgba(237,230,211,.08);--gold:#D4A72C;--bone:#EDE6D3;--mute:#9A9384;--red:#E08A7E;--green:#8FBF8A;--serif:'Instrument Serif',Georgia,serif;--sans:Inter,system-ui,sans-serif}
@@ -134,7 +137,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 <section id="offers" class="screen">
   <div class="h">Offers</div><div class="sub">Pick a task and complete it to earn naira.</div>
   
-  <!-- INSTANT ADS (SDK) -->
   <div class="sec-title">Instant Ads</div>
   
   <div class="card" style="border-color:var(--gold);">
@@ -149,7 +151,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
       <button class="btn" id="adslabBtn">View Ad Now</button>
   </div>
 
-  <!-- OFFERWALLS (DIRECT LINKS) -->
   <div class="sec-title">Offerwalls</div>
   
   <div class="row" onclick="openWall('moneyrain')">
@@ -326,7 +327,6 @@ function render() {
 }
 async function refresh() { const f = await Data.me(); if (f && !f.error) { me = f; render(); } else if (f && f.error) toast('Could not reach the server'); }
 
-// Open Direct Links
 function openWall(type) {
   if (!me || !me.uid) return toast('Please wait for your ID to load');
   let url = '';
