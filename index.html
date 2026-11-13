@@ -151,19 +151,42 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <div class="card">
     <b>MoneyRain Tasks</b>
     <div class="meta" style="margin-bottom:12px;">PTC, Autosurf, YouTube & more</div>
-    <div id="moneyrain-container" style="display:flex; justify-content:center;"></div>
+    <div id="moneyrain-container" style="display:flex; justify-content:center;">
+        <div class="meta">Loading widget...</div>
+    </div>
   </div>
 
   <div class="card">
     <b>BitOffers Tasks</b>
     <div class="meta" style="margin-bottom:12px;">Complete tasks and surveys</div>
-    <div id="bitoffers-container"></div>
+    <div id="bitoffers-container">
+        <div class="meta">Loading tasks...</div>
+    </div>
   </div>
 
   <div class="card">
     <b>Adslab Tasks</b>
     <div class="meta" style="margin-bottom:12px;">High-paying offers</div>
-    <div id="adslab-container"></div>
+    <div id="adslab-container">
+        <div class="meta">Loading tasks...</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <b>CryptoLink Tasks</b>
+    <div class="meta" style="margin-bottom:12px;">Premium secure offerwall</div>
+    <div id="cryptolink-container">
+        <div class="meta">Tap to load secure tasks...</div>
+    </div>
+    <button class="btn ghost" onclick="loadCryptoLink()" style="margin-top:10px;">Load CryptoLink Tasks</button>
+  </div>
+
+  <div class="card">
+    <b>Offerwallapi Tasks</b>
+    <div class="meta" style="margin-bottom:12px;">More high-paying offers</div>
+    <div id="offerwallapi-container">
+        <div class="meta">Loading tasks...</div>
+    </div>
   </div>
 
 </section>
@@ -313,17 +336,48 @@ function render() {
   if (!(me.history || []).length) { const c = h('div', 'card'); c.appendChild(h('div', 'meta', 'No activity yet.')); hist.appendChild(c); }
   (me.history || []).forEach(x => { const r = h('div', 'row'); r.appendChild(h('span', 'meta', String(x.reason || ''))); const st = x.status === 'rejected' ? ' no' : x.status === 'requested' ? '' : ' ok'; r.appendChild(h('span', 'badge' + st, ((x.delta || 0) >= 0 ? '+' : '') + N(x.delta))); hist.appendChild(r); });
   $('bellDot').classList.toggle('on', (me.unread || 0) > 0);
-
-  if(me.uid && me.uid !== '0') {
-      $('moneyrain-container').innerHTML = `<iframe src="https://offerwall.moneyrain.top/embed.php?pub=2431&uid=${me.uid}" width="360" height="360" style="border:0;border-radius:8px;overflow:hidden" loading="lazy"></iframe>`;
-      
-      // BITOFFERS KEY FIXED BELOW: zero instead of O at the end
-      $('bitoffers-container').innerHTML = `<iframe style="width:100%;height:800px;border:0;padding:0;margin:0;" scrolling="yes" frameborder="0" src="https://bitsoffers.com/offerwall/?userid=${me.uid}&key=mZHdhpSQ4jcyov5bFDk0"></iframe>`;
-      
-      $('adslab-container').innerHTML = `<iframe src="https://adslab.me/task-EkPzIkTBkGcc/${me.uid}" width="100%" height="800px" style="border: none; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);"></iframe>`;
-  }
 }
-async function refresh() { const f = await Data.me(); if (f && !f.error) { me = f; render(); } else if (f && f.error) toast('Could not reach the server'); }
+
+let iframesLoaded = false;
+function loadIframes() {
+    if (!me || !me.uid || me.uid === '0' || iframesLoaded) return;
+    
+    // 1. MoneyRain (Exact Widget)
+    $('moneyrain-container').innerHTML = `<iframe src="https://offerwall.moneyrain.top/embed.php?pub=2431&uid=${me.uid}" width="360" height="360" style="border:0;border-radius:8px;overflow:hidden" loading="lazy"></iframe>`;
+    
+    // 2. BitOffers (Your Exact Code)
+    $('bitoffers-container').innerHTML = `<iframe style="width:100%;height:800px;border:0;padding:0;margin:0;" scrolling="yes" frameborder="0" src="https://bitsoffers.com/offerwall/?userid=${me.uid}&key=mZHdhpSQ4jcyov5bFDk0"></iframe>`;
+    
+    // 3. Adslab (Your Exact Code)
+    $('adslab-container').innerHTML = `<iframe src="https://adslab.me/task-EkPzIkTBkGcc/${me.uid}" width="100%" height="800px" style="border: none; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);"></iframe>`;
+    
+    // 4. Offerwallapi (Your Exact Code)
+    $('offerwallapi-container').innerHTML = `<iframe src="https://offerwallapi.com/offerwall/07fd34e039b11023a1a08754c78bf480/${me.uid}" style="width:100%;height:700px;border:0;" scrolling="auto"></iframe>`;
+    
+    iframesLoaded = true;
+}
+
+async function loadCryptoLink() {
+    if (!me || !me.uid) return toast('Please wait for your ID to load');
+    $('cryptolink-container').innerHTML = `<div class="meta">Requesting secure URL...</div>`;
+    const r = await call('/api/cryptolink-iframe', {});
+    if (r.error || !r.url) {
+        $('cryptolink-container').innerHTML = `<div class="meta" style="color:var(--red)">Could not load CryptoLink. Please try again.</div>`;
+        return;
+    }
+    $('cryptolink-container').innerHTML = `
+      <iframe data-pubcrypto-offerwall src="${r.url}" title="Offerwall" width="100%" height="800" frameborder="0" style="display:block;width:100%;max-width:100%;border:0" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>
+    `;
+}
+
+async function refresh() { 
+  const f = await Data.me(); 
+  if (f && !f.error) { 
+    me = f; 
+    render(); 
+    loadIframes(); 
+  } 
+}
 
 function chooseBank(name) { chosenBank = name; $('bankSearch').style.display = 'none'; const c = $('bankChosen'); c.style.display = 'block'; c.textContent = name; $('bankList').classList.remove('on'); }
 function showBanks(q) {
@@ -412,8 +466,6 @@ $('adslabBtn').onclick = () => {
     }
     await refresh(); 
   } catch (e) { console.error(e); }
-  
-  if (LIVE) setInterval(refresh, 30000);
 })();
 </script>
 </body>
