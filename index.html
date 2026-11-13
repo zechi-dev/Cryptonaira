@@ -77,13 +77,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 #loader p{color:var(--mute);font-size:12px;margin-top:8px}
 .bar{width:120px;height:1px;background:var(--hair);margin-top:28px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--gold);animation:fill 2s forwards}@keyframes fill{to{width:100%}}
 .sec-title{font-family:var(--serif);font-size:20px;color:var(--gold);margin:24px 0 10px;border-bottom:1px solid var(--line);padding-bottom:8px;}
-/* IFRAME MODAL CSS */
-#iframeModal{position:fixed;inset:0;background:#000;z-index:9999;display:none;flex-direction:column;}
-.iframe-header{padding:14px 20px;display:flex;justify-content:space-between;align-items:center;background:var(--ink);border-bottom:1px solid var(--hair);}
-.iframe-title{color:var(--gold);font-weight:600;font-size:14px;}
-.close-iframe{color:var(--bone);font-size:24px;cursor:pointer;}
-#wallFrame{flex:1;width:100%;border:none;background:#fff;}
-.iframe-footer{padding:12px 20px;text-align:center;background:var(--ink);border-top:1px solid var(--hair);}
 </style>
 </head>
 <body>
@@ -103,18 +96,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <b>CRYPTONAIRA</b>
   <p>Earn naira on your own time</p>
   <div class="bar"><i></i></div>
-</div>
-
-<!-- IFRAME CONTAINER -->
-<div id="iframeModal">
-  <div class="iframe-header">
-    <div class="iframe-title">Offerwall</div>
-    <div class="close-iframe" id="closeIframe">&#10005;</div>
-  </div>
-  <iframe id="wallFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" src="about:blank"></iframe>
-  <div class="iframe-footer">
-    <button class="btn ghost" id="openExternalBtn" style="margin-top:0;">Open in Browser instead</button>
-  </div>
 </div>
 
 <div class="app">
@@ -165,30 +146,24 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
       <button class="btn" id="adslabBtn">View Ad Now</button>
   </div>
 
-  <div class="sec-title">Offerwalls (In-App)</div>
+  <div class="sec-title">Offerwalls</div>
   
-  <div class="row" onclick="openWall('moneyrain')">
-    <div>
-      <b>MoneyRain Tasks</b>
-      <div class="meta">PTC, Autosurf, YouTube & more</div>
-    </div>
-    <span class="badge">Open</span>
+  <div class="card">
+    <b>MoneyRain Tasks</b>
+    <div class="meta" style="margin-bottom:12px;">PTC, Autosurf, YouTube & more</div>
+    <div id="moneyrain-container" style="display:flex; justify-content:center;"></div>
   </div>
 
-  <div class="row" onclick="openWall('bitoffers')">
-    <div>
-      <b>BitOffers Tasks</b>
-      <div class="meta">Complete tasks and surveys</div>
-    </div>
-    <span class="badge">Open</span>
+  <div class="card">
+    <b>BitOffers Tasks</b>
+    <div class="meta" style="margin-bottom:12px;">Complete tasks and surveys</div>
+    <div id="bitoffers-container"></div>
   </div>
 
-  <div class="row" onclick="openWall('adslab')">
-    <div>
-      <b>Adslab Tasks</b>
-      <div class="meta">High-paying offers</div>
-    </div>
-    <span class="badge">Open</span>
+  <div class="card">
+    <b>Adslab Tasks</b>
+    <div class="meta" style="margin-bottom:12px;">High-paying offers</div>
+    <div id="adslab-container"></div>
   </div>
 
 </section>
@@ -243,7 +218,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 const CONFIG = {
   API_URL: 'https://cryptonaira.zechi-dev.workers.dev',
   BOT: 'Cryptonaira_bot',
-  NGN_PER_USD: 900, // YOUR SECRET MARGIN RATE
+  NGN_PER_USD: 900,
   MIN_PAYOUT: 2000,
   PAYOUT_DAYS_UTC: [3, 6],
   PAYOUT_HOUR_UTC: 11,
@@ -338,31 +313,20 @@ function render() {
   if (!(me.history || []).length) { const c = h('div', 'card'); c.appendChild(h('div', 'meta', 'No activity yet.')); hist.appendChild(c); }
   (me.history || []).forEach(x => { const r = h('div', 'row'); r.appendChild(h('span', 'meta', String(x.reason || ''))); const st = x.status === 'rejected' ? ' no' : x.status === 'requested' ? '' : ' ok'; r.appendChild(h('span', 'badge' + st, ((x.delta || 0) >= 0 ? '+' : '') + N(x.delta))); hist.appendChild(r); });
   $('bellDot').classList.toggle('on', (me.unread || 0) > 0);
+
+  // --- INJECT YOUR EXACT IFRAMES ---
+  if(me.uid && me.uid !== '0') {
+      // 1. MoneyRain (Exact Code)
+      $('moneyrain-container').innerHTML = `<iframe src="https://offerwall.moneyrain.top/embed.php?pub=2431&uid=${me.uid}" width="360" height="360" style="border:0;border-radius:8px;overflow:hidden" loading="lazy"></iframe>`;
+      
+      // 2. BitOffers (Exact Code)
+      $('bitoffers-container').innerHTML = `<iframe style="width:100%;height:800px;border:0;padding:0;margin:0;" scrolling="yes" frameborder="0" src="https://bitsoffers.com/offerwall/?userid=${me.uid}&key=mZHdhpSQ4jcyov5bFDk0"></iframe>`;
+      
+      // 3. Adslab (Exact Code)
+      $('adslab-container').innerHTML = `<iframe src="https://adslab.me/task-EkPzIkTBkGcc/${me.uid}" width="100%" height="800px" style="border: none; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);"></iframe>`;
+  }
 }
 async function refresh() { const f = await Data.me(); if (f && !f.error) { me = f; render(); } else if (f && f.error) toast('Could not reach the server'); }
-
-// --- NEW: IFRAME MODAL LOGIC ---
-let currentWallUrl = '';
-function openWall(type) {
-  if (!me || !me.uid) return toast('Please wait for your ID to load');
-  let url = '';
-  if (type === 'moneyrain') url = `https://offerwall.moneyrain.top/wall.php?pub=2431&uid=${me.uid}`;
-  if (type === 'bitoffers') url = `https://bitsoffers.com/offerwall/?userid=${me.uid}&key=mZHdhpSQ4jcyov5bFDk0`;
-  if (type === 'adslab') url = `https://adslab.me/task-EkPzIkTBkGcc/${me.uid}`;
-  
-  currentWallUrl = url;
-  $('wallFrame').src = url;
-  $('iframeModal').style.display = 'flex';
-}
-$('closeIframe').onclick = () => {
-  $('iframeModal').style.display = 'none';
-  $('wallFrame').src = 'about:blank';
-  refresh(); // Force refresh balance after they close the wall
-};
-$('openExternalBtn').onclick = () => {
-  if (tg && tg.openLink) tg.openLink(currentWallUrl); else window.open(currentWallUrl, '_blank');
-  $('closeIframe').click();
-};
 
 function chooseBank(name) { chosenBank = name; $('bankSearch').style.display = 'none'; const c = $('bankChosen'); c.style.display = 'block'; c.textContent = name; $('bankList').classList.remove('on'); }
 function showBanks(q) {
@@ -385,7 +349,7 @@ $('checkBtn').onclick = async () => {
   else if (r.streak === 7) toast('7-day streak! +' + N(r.amount));
   else if (r.amount > 0) toast('Day ' + r.streak + ' of 7 \u2014 +' + N(r.amount));
   else toast('Day ' + r.streak + ' of 7 \u2705');
-  await refresh(); // FORCES UPDATE
+  await refresh(); 
 };
 $('walletBtn').onclick = async () => {
   const num = $('acctNum').value.trim(), name = $('acctName').value.trim();
@@ -444,7 +408,14 @@ $('adslabBtn').onclick = () => {
   const banner = $('banner');
   if (!LIVE) { banner.style.display = 'block'; banner.textContent = 'Preview mode: no server is connected, so nothing is saved online.'; }
   else if (!(tg && tg.initData)) { banner.style.display = 'block'; banner.textContent = 'Please open this app from inside Telegram.'; }
-  try { await refresh(); } catch (e) { console.error(e); }
+  
+  try { 
+    if (LIVE) {
+        await call('/api/sync', {}); 
+    }
+    await refresh(); 
+  } catch (e) { console.error(e); }
+  
   if (LIVE) setInterval(refresh, 30000);
 })();
 </script>
