@@ -273,7 +273,6 @@ function render() {
   const next = nextPayout(), days = Math.ceil((next - new Date()) / 86400000);
   const dayName = next.toLocaleDateString(undefined, { weekday: 'long' });
 
-  // AUTO CREDIT NOTIFICATION
   if (lastBalance > 0 && bal > lastBalance) {
       const earned = bal - lastBalance;
       toast(`Offer Credited! +${N(earned)}`);
@@ -305,7 +304,8 @@ function render() {
 }
 
 async function openLink(type) {
-  if (!me || !me.uid) return toast('Please wait for your ID to load');
+  const uid = (me && me.uid) ? me.uid : UID;
+  if (!uid || uid === '0') return toast('Telegram ID not found. Please restart the app.');
   
   if (type === 'pubcrypto') {
       toast('Generating secure link...');
@@ -316,10 +316,10 @@ async function openLink(type) {
   }
 
   let url = '';
-  if (type === 'moneyrain') url = `https://offerwall.moneyrain.top/wall.php?pub=2431&uid=${me.uid}`;
-  if (type === 'adslab') url = `https://adslab.me/task-EkPzIkTBkGcc/${me.uid}`;
-  if (type === 'offerwallapi') url = `https://offerwallapi.com/offerwall/07fd34e039b11023a1a08754c78bf480/${me.uid}`;
-  if (type === 'bitoffers') url = `https://bitsoffers.com/offerwall/?userid=${me.uid}&key=mZHdhpSQ4jcyov5bFDkO`;
+  if (type === 'moneyrain') url = `https://offerwall.moneyrain.top/wall.php?pub=2431&uid=${uid}`;
+  if (type === 'adslab') url = `https://adslab.me/task-EkPzIkTBkGcc/${uid}`;
+  if (type === 'offerwallapi') url = `https://offerwallapi.com/offerwall/07fd34e039b11023a1a08754c78bf480/${uid}`;
+  if (type === 'bitoffers') url = `https://bitsoffers.com/offerwall/?userid=${uid}&key=mZHdhpSQ4jcyov5bFDkO`;
   
   if (tg && tg.openLink) tg.openLink(url); else window.open(url, '_blank');
 }
@@ -386,7 +386,6 @@ document.addEventListener('click', e => {
   window.scrollTo(0, 0);
 });
 
-// WAKE UP AND REFRESH WHEN USER RETURNS FROM OFFERWALL
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
         refresh();
@@ -394,7 +393,12 @@ document.addEventListener('visibilitychange', () => {
 });
 
 (async function boot() {
-  const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user; if (u && u.id) UID = String(u.id);
+  const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user; 
+  if (u && u.id) {
+      UID = String(u.id);
+      $('uidText').textContent = (u.username || u.first_name || 'User') + ' \u2022 ID ' + UID;
+  }
+  
   const banner = $('banner');
   if (!LIVE) { banner.style.display = 'block'; banner.textContent = 'Preview mode: no server is connected, so nothing is saved online.'; }
   else if (!(tg && tg.initData)) { banner.style.display = 'block'; banner.textContent = 'Please open this app from inside Telegram.'; }
