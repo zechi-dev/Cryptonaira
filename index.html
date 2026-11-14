@@ -211,7 +211,6 @@ const LIVE = !!CONFIG.API_URL;
 const $ = id => document.getElementById(id);
 const tg = window.Telegram && Telegram.WebApp;
 try { if (tg) { tg.ready(); tg.expand(); } } catch (e) {}
-// UPDATED: 4 decimal places maximum, no trailing zeros if not needed
 const N = n => {
     const num = Number(n) || 0;
     return '\u20A6' + num.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
@@ -328,7 +327,6 @@ async function openLink(type) {
       if (type === 'offerwallapi') url = `https://offerwallapi.com/offerwall/07fd34e039b11023a1a08754c78bf480/${uid}`;
   }
 
-  // Force it to open in Telegram's WebView overlay so it can be minimized
   if (tg && tg.openLink) {
       tg.openLink(url, { try_instant_view: false });
   } else {
@@ -383,35 +381,33 @@ $('withdrawBtn').onclick = async () => {
   await refresh();
 };
 $('copyBtn').onclick = async () => { try { await navigator.clipboard.writeText($('refLink').textContent); } catch (e) {} toast('Link copied'); };
-$('bellBtn').onclick = async () => {
+
+// ==========================================
+// MESSAGE BOX & 24-HOUR POPUP LOGIC
+// ==========================================
+async function openMessageBox() {
   const r = await Data.messages(), list = (r && r.messages) || [], box = $('msgList'); clear(box);
-
-  // --- HARDCODED WELCOME MESSAGE ---
-  const welcomeHtml = `
-    <div class="row" style="display:block; background:var(--panel2); border-color:var(--gold);">
-      <b style="color:var(--gold); font-size: 14px;">Welcome to CryptoNaira! 👋</b>
-      <div class="meta" style="margin-top:8px; white-space:pre-wrap; color:var(--bone);">To ensure you get credited for every offer, please follow these steps carefully:
-
-1. Choose a Task: Tap any offerwall to open the tasks.
-2. Complete the Task: Follow the instructions on the offer page (e.g., play a game, answer a survey).
-3. IMPORTANT – Minimize and Return: After finishing, DO NOT CLOSE the window. Tap the Back arrow (←) or Minimize to return to CryptoNaira.
-4. Get Credited: Your balance will update automatically the second you return. You will see an "Offer Credited" popup.
-
-Note: Do not use VPNs or try to fake tasks. Our system blocks fraudulent activity and you will not be paid.
-
-Good luck and happy earning!</div>
-    </div>
-  `;
-  box.innerHTML = welcomeHtml;
-
+  
   if (!list.length) {
-      // If no admin messages, just leave the welcome message
+      box.innerHTML = '<p class="sub" style="text-align:center;padding:20px;">No messages yet.</p>';
   } else {
-      list.forEach(m => { const c = h('div', 'row'); c.style.display = 'block'; c.appendChild(h('b', '', String(m.title || ''))); const b = h('div', 'meta', String(m.body || '')); b.style.whiteSpace = 'pre-wrap'; c.appendChild(b); box.appendChild(c); });
+      list.forEach(m => { 
+          const c = h('div', 'row'); c.style.display = 'block'; 
+          c.appendChild(h('b', '', String(m.title || ''))); 
+          const b = h('div', 'meta', String(m.body || '')); b.style.whiteSpace = 'pre-wrap'; c.appendChild(b); 
+          box.appendChild(c); 
+      });
   }
+  
+  $('sheet').classList.add('on'); 
+  $('bellDot').classList.remove('on'); 
+  Data.markRead();
+  
+  // Save the 24-hour timestamp
+  localStorage.setItem('last_popup_' + UID, Date.now().toString());
+}
 
-  $('sheet').classList.add('on'); $('bellDot').classList.remove('on'); Data.markRead();
-};
+$('bellBtn').onclick = openMessageBox;
 $('sheetClose').onclick = () => $('sheet').classList.remove('on');
 $('sheet').onclick = e => { if (e.target === $('sheet')) $('sheet').classList.remove('on'); };
 document.addEventListener('click', e => {
@@ -441,6 +437,17 @@ document.addEventListener('visibilitychange', () => {
   try { 
     if (LIVE) { await call('/api/sync', {}); }
     await refresh(); 
+    
+    // 24-HOUR POPUP LOGIC
+    if (UID && UID !== '0') {
+        const lastPopup = localStorage.getItem('last_popup_' + UID);
+        const now = Date.now();
+        const oneDay = 24 * 60 * 60 * 1000;
+        
+        if (!lastPopup || (now - parseInt(lastPopup)) > oneDay) {
+            setTimeout(() => { openMessageBox(); }, 1500); // Show 1.5s after load
+        }
+    }
   } catch (e) { console.error(e); }
 })();
 </script>
