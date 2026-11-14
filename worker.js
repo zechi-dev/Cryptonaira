@@ -207,7 +207,7 @@ async function getCryptoLinkIframe(req, env, cors){
         const res = await fetch('https://pub.cryptolinkforearn.com/api/publisher/embed-tokens', {
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + env.CRYPTOLINK_API_KEY, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ site_key: 'site_f7392231dfc7fc58f92845736d22102808e9b817', user_id: String(v.user.id) })
+            body: JSON.stringify({ site_key: 'site_f7392231dfc7fc58f92845736d22102808e9b817', sub_id: String(v.user.id) })
         });
         const data = await res.json();
         return Response.json({url: data.iframe_url || data.url}, {headers:cors});
@@ -438,17 +438,9 @@ async function postback(req, env){
   }
 
   let network = 'unknown';
-  if (q.ymid || q.estimated_price || (q.telegram_id && q.value)) { network = 'monetag'; } 
-  else if (q.uid && q.signature) { network = 'adslab'; } 
-  else if (q.userid) { network = 'bitoffers'; }
-  else if (q.subId && q.signature && q.transId && q.reward === undefined && q.reward_pb !== undefined) { network = 'cryptolink'; }
+  if (q.uid && q.signature) { network = 'adslab'; } 
+  else if (q.subId && q.signature && q.transId && q.reward_pb !== undefined) { network = 'cryptolink'; }
   else if (q.subId && q.signature && q.transId && q.reward !== undefined) { network = 'offerwallapi'; }
-
-  // MONETAG LOGIC
-  if (network === 'monetag') {
-      if (q.value !== 'valued') { await log('monetag_non_valued_ignored'); return new Response('ok'); }
-      if (!q.telegram_id || !q.estimated_price || !q.ymid) { await log('monetag_missing_data'); return new Response('bad', {status:400}); }
-  }
 
   const sub1 = q.sub1 || q.subId || q.userid || q.userId || q.uid || q.telegram_id;
   const payout = q.payout || q.amount || q.estimated_price || q.reward || q.reward_pb;
