@@ -102,7 +102,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 <section id="home" class="screen active">
   <div class="card">
     <div class="label">Total balance</div>
-    <div class="amount" id="balHome">&#8358;0</div>
+    <div class="amount" id="balHome">&#8358;0.00</div>
     <div class="meta" id="payHint"></div>
     <div class="progress"><i id="bar"></i></div>
     <div class="grid2"><div class="stat"><span class="label">Tasks completed</span><b id="tasksHome">0</b></div><div class="stat"><span class="label">Check-in streak</span><b id="streakHome">0/7</b></div></div>
@@ -115,7 +115,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 <section id="offers" class="screen">
   <div class="h">Offers</div><div class="sub">Pick a task and complete it to earn naira.</div>
   
-  <div class="sec-title">Offerwalls</div>
+  <div class="sec-title">External Tasks</div>
   
   <div class="card">
     <b>MoneyRain Tasks</b>
@@ -130,21 +130,28 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   </div>
 
   <div class="card">
-    <b>Offerwallapi Tasks</b>
-    <div class="meta" style="margin-bottom:12px;">More high-paying offers</div>
-    <button class="btn" onclick="openLink('offerwallapi')">Open Tasks</button>
-  </div>
-
-  <div class="card">
     <b>BitOffers Tasks</b>
     <div class="meta" style="margin-bottom:12px;">Complete tasks and surveys</div>
     <button class="btn" onclick="openLink('bitoffers')">Open Tasks</button>
   </div>
 
+  <div class="sec-title">In-App Tasks</div>
+
+  <div class="card">
+    <b>Offerwallapi Tasks</b>
+    <div class="meta" style="margin-bottom:12px;">More high-paying offers</div>
+    <div id="offerwallapi-container">
+        <div class="meta">Loading tasks...</div>
+    </div>
+  </div>
+
   <div class="card">
     <b>PubCrypto Tasks</b>
     <div class="meta" style="margin-bottom:12px;">Premium secure offerwall</div>
-    <button class="btn" onclick="openLink('pubcrypto')">Open Tasks</button>
+    <div id="pubcrypto-container">
+        <div class="meta">Tap to load secure tasks...</div>
+    </div>
+    <button class="btn ghost" onclick="loadPubCrypto()" style="margin-top:10px;">Load PubCrypto Tasks</button>
   </div>
 
 </section>
@@ -211,7 +218,6 @@ const LIVE = !!CONFIG.API_URL;
 const $ = id => document.getElementById(id);
 const tg = window.Telegram && Telegram.WebApp;
 try { if (tg) { tg.ready(); tg.expand(); } } catch (e) {}
-// UPDATED FORMATTING FUNCTION FOR DECIMALS
 const N = n => '\u20A6' + (Number(n) || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const USD = n => '$' + ((n || 0) / 1300).toFixed(2);
 const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
@@ -302,27 +308,60 @@ function render() {
   if (!(me.history || []).length) { const c = h('div', 'card'); c.appendChild(h('div', 'meta', 'No activity yet.')); hist.appendChild(c); }
   (me.history || []).forEach(x => { const r = h('div', 'row'); r.appendChild(h('span', 'meta', String(x.reason || ''))); const st = x.status === 'rejected' ? ' no' : x.status === 'requested' ? '' : ' ok'; r.appendChild(h('span', 'badge' + st, ((x.delta || 0) >= 0 ? '+' : '') + N(x.delta))); hist.appendChild(r); });
   $('bellDot').classList.toggle('on', (me.unread || 0) > 0);
+
+  // Load In-App Iframes
+  loadIframes();
+}
+
+let iframesLoaded = false;
+function loadIframes() {
+    if (!me || !me.uid || me.uid === '0' || iframesLoaded) return;
+    
+    // 1. Offerwallapi (Embedded Iframe)
+    $('offerwallapi-container').innerHTML = `<iframe src="https://offerwallapi.com/offerwall/07fd34e039b11023a1a08754c78bf480/${me.uid}" style="width:100%;height:700px;border:0;" scrolling="auto"></iframe>`;
+    
+    iframesLoaded = true;
+}
+
+async function loadPubCrypto() {
+    if (!me || !me.uid) return toast('Please wait for your ID to load');
+    $('pubcrypto-container').innerHTML = `<div class="meta">Requesting secure URL...</div>`;
+    const r = await call('/api/pubcrypto-url', {});
+    if (r.error || !r.url) {
+        $('pubcrypto-container').innerHTML = `<div class="meta" style="color:var(--red)">Could not load PubCrypto. Please try again.</div>`;
+        return;
+    }
+    $('pubcrypto-container').innerHTML = `
+      <iframe data-pubcrypto-offerwall src="${r.url}" title="Offerwall" width="100%" height="800" frameborder="0" style="display:block;width:100%;max-width:100%;border:0" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>
+    `;
+    // PubCrypto Resize Script
+    const script = document.createElement('script');
+    script.textContent = `
+      (function () {
+        window.addEventListener("message", function (event) {
+          if (event.origin !== "https://pub.cryptolinkforearn.com" || !event.data || event.data.type !== "pubcrypto:offerwall-resize") return;
+          var height = Math.round(Math.min(5000, Math.max(360, Number(event.data.height) || 800)));
+          var frames = document.querySelectorAll("iframe[data-pubcrypto-offerwall]");
+          for (var index = 0; index < frames.length; index += 1) {
+            if (frames[index].contentWindow === event.source) frames[index].style.height = height + "px";
+          }
+        });
+      }());
+    `;
+    document.head.appendChild(script);
 }
 
 async function openLink(type) {
   const uid = (me && me.uid) ? me.uid : UID;
   if (!uid || uid === '0') return toast('Telegram ID not found. Please restart the app.');
   
-  if (type === 'pubcrypto') {
-      toast('Generating secure link...');
-      const r = await call('/api/pubcrypto-url', {});
-      if (r.error || !r.url) return toast('Could not generate PubCrypto link');
-      if (tg && tg.openLink) tg.openLink(r.url); else window.open(r.url, '_blank');
-      return;
-  }
-
   let url = '';
   if (type === 'moneyrain') url = `https://offerwall.moneyrain.top/wall.php?pub=2431&uid=${uid}`;
   if (type === 'adslab') url = `https://adslab.me/task-EkPzIkTBkGcc/${uid}`;
-  if (type === 'offerwallapi') url = `https://offerwallapi.com/offerwall/07fd34e039b11023a1a08754c78bf480/${uid}`;
   if (type === 'bitoffers') url = `https://bitsoffers.com/offerwall/?userid=${uid}&key=mZHdhpSQ4jcyov5bFDkO`;
   
-  if (tg && tg.openLink) tg.openLink(url); else window.open(url, '_blank');
+  // FORCE EXTERNAL BROWSER OPEN (Chrome/Safari) so user can minimize
+  window.open(url, '_blank');
 }
 
 async function refresh() { 
