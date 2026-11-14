@@ -265,12 +265,21 @@ const Data = LIVE ? {
   async withdraw() { return { error: 'preview' }; }, async messages() { return { messages: [] }; }, async markRead() { return {}; }
 };
 
-let me = null, chosenBank = null;
+let me = null, chosenBank = null, lastBalance = 0;
+
 function render() {
   if (!me || me.error) return;
   const bal = me.balance || 0, done = me.last_checkin === dayKey(), acct = me.account;
   const next = nextPayout(), days = Math.ceil((next - new Date()) / 86400000);
   const dayName = next.toLocaleDateString(undefined, { weekday: 'long' });
+
+  // AUTO CREDIT NOTIFICATION
+  if (lastBalance > 0 && bal > lastBalance) {
+      const earned = bal - lastBalance;
+      toast(`Offer Credited! +${N(earned)}`);
+  }
+  lastBalance = bal;
+
   $('uidText').textContent = (me.username || 'User') + ' \u2022 ID ' + (me.uid || '-');
   $('balHome').textContent = $('balWallet').textContent = N(bal);
   $('balUsd').textContent = '\u2248 ' + USD(bal);
@@ -375,6 +384,13 @@ document.addEventListener('click', e => {
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
   document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('on', b.dataset.go === id));
   window.scrollTo(0, 0);
+});
+
+// WAKE UP AND REFRESH WHEN USER RETURNS FROM OFFERWALL
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        refresh();
+    }
 });
 
 (async function boot() {
