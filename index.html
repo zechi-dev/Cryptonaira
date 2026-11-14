@@ -6,24 +6,8 @@
 <meta name="theme-color" content="#0B0A08">
 <title>CryptoNaira</title>
 <meta name="website-verification" content="6af6bca4265a1d467ca92dce">
-<meta name="OctoClix" content="RFNF5gNl6e">
 
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src='//libtl.com/sdk.js' data-zone='12253468' data-sdk='show_12253468'></script>
-
-<script>
-  (function() {
-    var tgApp = window.Telegram?.WebApp;
-    tgApp?.ready();
-    var userId = tgApp?.initDataUnsafe?.user?.id || "guest";
-    window.ADSLAB_INT = 'int-MavtWyIIqg18'; 
-    window.ADSLAB_USER = String(userId);            
-    var s = document.createElement('script');
-    s.src = 'https://adslab.me/api/sdk.js';
-    s.async = true;
-    document.head.appendChild(s);
-  })();
-</script>
 
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif&display=swap">
 <style>
@@ -132,20 +116,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 <section id="offers" class="screen">
   <div class="h">Offers</div><div class="sub">Pick a task and complete it to earn naira.</div>
   
-  <div class="sec-title">Instant Ads</div>
-  
-  <div class="card" style="border-color:var(--gold);">
-      <div class="label" style="color:var(--gold);">Watch & Earn (Monetag)</div>
-      <p class="meta" style="margin-top:8px; margin-bottom: 16px;">Watch a short video ad to earn instant Naira.</p>
-      <button class="btn" id="monetagBtn">Watch Ad Now</button>
-  </div>
-
-  <div class="card" style="border-color:var(--gold);">
-      <div class="label" style="color:var(--gold);">Sponsor Ads (Adslab)</div>
-      <p class="meta" style="margin-top:8px; margin-bottom: 16px;">View a sponsored message to earn Naira.</p>
-      <button class="btn" id="adslabBtn">View Ad Now</button>
-  </div>
-
   <div class="sec-title">Offerwalls</div>
   
   <div class="card">
@@ -153,14 +123,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
     <div class="meta" style="margin-bottom:12px;">PTC, Autosurf, YouTube & more</div>
     <div id="moneyrain-container" style="display:flex; justify-content:center;">
         <div class="meta">Loading widget...</div>
-    </div>
-  </div>
-
-  <div class="card">
-    <b>BitOffers Tasks</b>
-    <div class="meta" style="margin-bottom:12px;">Complete tasks and surveys</div>
-    <div id="bitoffers-container">
-        <div class="meta">Loading tasks...</div>
     </div>
   </div>
 
@@ -173,20 +135,20 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   </div>
 
   <div class="card">
+    <b>Offerwallapi Tasks</b>
+    <div class="meta" style="margin-bottom:12px;">More high-paying offers</div>
+    <div id="offerwallapi-container">
+        <div class="meta">Loading tasks...</div>
+    </div>
+  </div>
+
+  <div class="card">
     <b>CryptoLink Tasks</b>
     <div class="meta" style="margin-bottom:12px;">Premium secure offerwall</div>
     <div id="cryptolink-container">
         <div class="meta">Tap to load secure tasks...</div>
     </div>
     <button class="btn ghost" onclick="loadCryptoLink()" style="margin-top:10px;">Load CryptoLink Tasks</button>
-  </div>
-
-  <div class="card">
-    <b>Offerwallapi Tasks</b>
-    <div class="meta" style="margin-bottom:12px;">More high-paying offers</div>
-    <div id="offerwallapi-container">
-        <div class="meta">Loading tasks...</div>
-    </div>
   </div>
 
 </section>
@@ -241,7 +203,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 const CONFIG = {
   API_URL: 'https://cryptonaira.zechi-dev.workers.dev',
   BOT: 'Cryptonaira_bot',
-  NGN_PER_USD: 900,
   MIN_PAYOUT: 2000,
   PAYOUT_DAYS_UTC: [3, 6],
   PAYOUT_HOUR_UTC: 11,
@@ -255,7 +216,7 @@ const $ = id => document.getElementById(id);
 const tg = window.Telegram && Telegram.WebApp;
 try { if (tg) { tg.ready(); tg.expand(); } } catch (e) {}
 const N = n => '\u20A6' + Math.round(n || 0).toLocaleString();
-const USD = n => '$' + ((n || 0) / CONFIG.NGN_PER_USD).toFixed(2);
+const USD = n => '$' + ((n || 0) / 1300).toFixed(2);
 const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
 const clear = e => { while (e.firstChild) e.removeChild(e.firstChild); };
 let toastTimer; const toast = m => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
@@ -342,16 +303,10 @@ let iframesLoaded = false;
 function loadIframes() {
     if (!me || !me.uid || me.uid === '0' || iframesLoaded) return;
     
-    // 1. MoneyRain (Exact Widget)
     $('moneyrain-container').innerHTML = `<iframe src="https://offerwall.moneyrain.top/embed.php?pub=2431&uid=${me.uid}" width="360" height="360" style="border:0;border-radius:8px;overflow:hidden" loading="lazy"></iframe>`;
     
-    // 2. BitOffers (Your Exact Code)
-    $('bitoffers-container').innerHTML = `<iframe style="width:100%;height:800px;border:0;padding:0;margin:0;" scrolling="yes" frameborder="0" src="https://bitsoffers.com/offerwall/?userid=${me.uid}&key=mZHdhpSQ4jcyov5bFDk0"></iframe>`;
-    
-    // 3. Adslab (Your Exact Code)
     $('adslab-container').innerHTML = `<iframe src="https://adslab.me/task-EkPzIkTBkGcc/${me.uid}" width="100%" height="800px" style="border: none; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);"></iframe>`;
     
-    // 4. Offerwallapi (Your Exact Code)
     $('offerwallapi-container').innerHTML = `<iframe src="https://offerwallapi.com/offerwall/07fd34e039b11023a1a08754c78bf480/${me.uid}" style="width:100%;height:700px;border:0;" scrolling="auto"></iframe>`;
     
     iframesLoaded = true;
@@ -433,27 +388,6 @@ document.addEventListener('click', e => {
   window.scrollTo(0, 0);
 });
 
-$('monetagBtn').onclick = async () => {
-  if(typeof show_12253468 !== 'function') return toast('Ad system is loading. Please wait.');
-  $('monetagBtn').disabled = true; $('monetagBtn').textContent = 'Loading Ad...';
-  show_12253468().then(() => {
-    toast('Ad finished! Crediting shortly...');
-    setTimeout(async () => { await refresh(); $('monetagBtn').disabled = false; $('monetagBtn').textContent = 'Watch Ad Now'; }, 3000);
-  }).catch(e => {
-    toast('Ad was skipped or failed to load.'); $('monetagBtn').disabled = false; $('monetagBtn').textContent = 'Watch Ad Now';
-  });
-};
-
-$('adslabBtn').onclick = () => {
-  if (window.adslabShowInterstitial) {
-    window.adslabShowInterstitial();
-    toast('Ad opened! Crediting after completion...');
-    setTimeout(async () => { await refresh(); }, 5000);
-  } else {
-    toast('Ad system is loading. Please wait.');
-  }
-};
-
 (async function boot() {
   const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user; if (u && u.id) UID = String(u.id);
   const banner = $('banner');
@@ -461,9 +395,7 @@ $('adslabBtn').onclick = () => {
   else if (!(tg && tg.initData)) { banner.style.display = 'block'; banner.textContent = 'Please open this app from inside Telegram.'; }
   
   try { 
-    if (LIVE) {
-        await call('/api/sync', {}); 
-    }
+    if (LIVE) { await call('/api/sync', {}); }
     await refresh(); 
   } catch (e) { console.error(e); }
 })();
