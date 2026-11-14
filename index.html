@@ -204,8 +204,8 @@ const CONFIG = {
   API_URL: 'https://cryptonaira.zechi-dev.workers.dev',
   BOT: 'Cryptonaira_bot',
   MIN_PAYOUT: 2000,
-  PAYOUT_DAYS_UTC: [3, 6],
-  PAYOUT_HOUR_UTC: 11,
+  PAYOUT_DAYS_UTC: [6], // 6 = Saturday
+  PAYOUT_HOUR_UTC: 11, // 12 PM WAT
   CHECKIN_DAILY: 13,
   CHECKIN_BONUS: 52,
   REFERRAL: { bonus: 100, activateAt: 650, recurring: 5, recurringUnlock: 100, recurringMonths: 12 }
@@ -281,7 +281,7 @@ function render() {
   $('bar').style.width = Math.min(100, bal / CONFIG.MIN_PAYOUT * 100) + '%';
   $('payHint').textContent = bal >= CONFIG.MIN_PAYOUT ? 'You can request a payout.' : N(CONFIG.MIN_PAYOUT - bal) + ' more to reach the ' + N(CONFIG.MIN_PAYOUT) + ' minimum.';
   $('paydayHome').textContent = 'Next payout: ' + dayName + ' ' + next.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' at 12 PM WAT (' + days + (days === 1 ? ' day)' : ' days)');
-  $('walletRule').textContent = 'Minimum ' + N(CONFIG.MIN_PAYOUT) + '. Payouts every Wednesday & Saturday, 12 PM WAT.';
+  $('walletRule').textContent = 'Minimum ' + N(CONFIG.MIN_PAYOUT) + '. Payouts every Saturday, 12 PM WAT.';
   $('tasksHome').textContent = $('pTasks').textContent = me.tasks_done || 0;
   $('streakHome').textContent = (me.streak || 0) + '/7';
   $('pName').textContent = me.username || 'User'; $('pUid').textContent = me.uid || '-';
@@ -315,14 +315,42 @@ function loadIframes() {
 async function loadCryptoLink() {
     if (!me || !me.uid) return toast('Please wait for your ID to load');
     $('cryptolink-container').innerHTML = `<div class="meta">Requesting secure URL...</div>`;
+    
     const r = await call('/api/cryptolink-iframe', {});
+    
     if (r.error || !r.url) {
         $('cryptolink-container').innerHTML = `<div class="meta" style="color:var(--red)">Could not load CryptoLink. Please try again.</div>`;
         return;
     }
+
     $('cryptolink-container').innerHTML = `
-      <iframe data-pubcrypto-offerwall src="${r.url}" title="Offerwall" width="100%" height="800" frameborder="0" style="display:block;width:100%;max-width:100%;border:0" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>
+      <iframe
+        data-pubcrypto-offerwall
+        src="${r.url}"
+        title="Offerwall"
+        width="100%"
+        height="800"
+        frameborder="0"
+        style="display:block;width:100%;max-width:100%;border:0"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+        referrerpolicy="no-referrer"
+      ></iframe>
     `;
+
+    const script = document.createElement('script');
+    script.textContent = `
+      (function () {
+        window.addEventListener("message", function (event) {
+          if (event.origin !== "https://pub.cryptolinkforearn.com" || !event.data || event.data.type !== "pubcrypto:offerwall-resize") return;
+          var height = Math.round(Math.min(5000, Math.max(360, Number(event.data.height) || 800)));
+          var frames = document.querySelectorAll("iframe[data-pubcrypto-offerwall]");
+          for (var index = 0; index < frames.length; index += 1) {
+            if (frames[index].contentWindow === event.source) frames[index].style.height = height + "px";
+          }
+        });
+      }());
+    `;
+    document.head.appendChild(script);
 }
 
 async function refresh() { 
@@ -369,7 +397,7 @@ $('walletBtn').onclick = async () => {
 $('withdrawBtn').onclick = async () => {
   $('withdrawBtn').disabled = true; const r = await Data.withdraw();
   const msg = { min: 'Minimum payout is ' + N(CONFIG.MIN_PAYOUT), wallet: 'Save your bank account first', pending: 'You already have a payout waiting', preview: 'Payouts start after launch' }[r.error];
-  if (msg) toast(msg); else if (r.error) toast('Could not request payout'); else toast('Payout requested. Paid on the next Wed or Sat.');
+  if (msg) toast(msg); else if (r.error) toast('Could not request payout'); else toast('Payout requested. Paid on the next Saturday.');
   await refresh();
 };
 $('copyBtn').onclick = async () => { try { await navigator.clipboard.writeText($('refLink').textContent); } catch (e) {} toast('Link copied'); };
