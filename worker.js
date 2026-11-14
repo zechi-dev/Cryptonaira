@@ -46,15 +46,6 @@ async function authAdmin(req, env){
 const DAY = 86400000;
 const todayUtc = () => new Date().toISOString().slice(0,10);
 const yestUtc = () => new Date(Date.now()-DAY).toISOString().slice(0,10);
-function nextCycleDate(from){
-  const d = new Date(from);
-  for(let i=0;i<14;i++){
-    d.setUTCDate(d.getUTCDate()+1);
-    const day = d.getUTCDay();
-    if(day===3 || day===6) return d.toISOString().slice(0,10);
-  }
-  return d.toISOString().slice(0,10);
-}
 
 async function creditOneTime(env, referrerId, refereeId){
   const ref = await env.DB.prepare(`SELECT * FROM referrals WHERE referrer_id=? AND referee_id=? AND activated=0`).bind(referrerId, refereeId).first();
@@ -65,8 +56,8 @@ async function creditOneTime(env, referrerId, refereeId){
   if(!referrer) return;
   await env.DB.batch([
     env.DB.prepare(`UPDATE referrals SET activated=1, activated_at=datetime('now') WHERE referrer_id=? AND referee_id=?`).bind(referrerId, refereeId),
-    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(referrerId, 100, 'referral_100', String(refereeId)),
-    env.DB.prepare(`UPDATE users SET balance=balance+100, earned_total=earned_total+100 WHERE telegram_id=?`).bind(referrerId)
+    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(referrerId, 100.0, 'referral_100', String(refereeId)),
+    env.DB.prepare(`UPDATE users SET balance=balance+100.0, earned_total=earned_total+100.0 WHERE telegram_id=?`).bind(referrerId)
   ]);
 }
 async function checkReferralActivation(env, refereeId){
@@ -76,26 +67,6 @@ async function checkReferralActivation(env, refereeId){
   for(const r of refs.results){ await creditOneTime(env, r.referrer_id, refereeId); }
 }
 
-async function settleCycles(env, userId){
-  const past = await env.DB.prepare(`SELECT DISTINCT cycle_date FROM payouts WHERE referrer_id=? AND cycle_date IS NOT NULL AND cycle_date < ? AND status='paid'`).bind(userId, todayUtc()).all();
-  for(const row of past.results){
-    const settled = await env.DB.prepare(`SELECT 1 FROM cycle_settlements WHERE beneficiary_id=? AND cycle_date=?`).bind(userId, row.cycle_date).first();
-    if(settled) continue;
-    const activated = await env.DB.prepare(`SELECT COUNT(*) c FROM referrals WHERE referrer_id=? AND activated=1 AND expires_at > datetime('now')`).bind(userId).first();
-    if((activated.c || 0) < 100){ await env.DB.prepare(`INSERT INTO cycle_settlements (beneficiary_id,cycle_date,referral_count,amount_ngn) VALUES (?,?,?,?)`).bind(userId, row.cycle_date, 0, 0).run(); continue; }
-    const count = await env.DB.prepare(`SELECT COUNT(*) c FROM payouts WHERE referrer_id=? AND cycle_date=? AND status='paid'`).bind(userId, row.cycle_date).first();
-    const cnt = count.c || 0;
-    if(cnt >= 100){
-      const amt = cnt * 5;
-      await env.DB.batch([
-        env.DB.prepare(`INSERT INTO cycle_settlements (beneficiary_id,cycle_date,referral_count,amount_ngn) VALUES (?,?,?,?)`).bind(userId, row.cycle_date, cnt, amt),
-        env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(userId, amt, 'cycle_bonus', row.cycle_date),
-        env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+? WHERE telegram_id=?`).bind(amt, amt, userId)
-      ]);
-    } else { await env.DB.prepare(`INSERT INTO cycle_settlements (beneficiary_id,cycle_date,referral_count,amount_ngn) VALUES (?,?,?,?)`).bind(userId, row.cycle_date, cnt, 0).run(); }
-  }
-}
-
 export default {
   async fetch(req, env){
     const url = new URL(req.url);
@@ -103,9 +74,7 @@ export default {
     if(req.method === 'OPTIONS') return new Response(null, {headers:cors});
     try {
       if(url.pathname === '/postback') return await postback(req, env);
-      
       if(url.pathname === '/admin/login' && req.method === 'POST') return await adminLogin(req, env, cors);
-      
       if(url.pathname === '/api/sync' && req.method === 'POST') return await userSync(req, env, cors);
       if(url.pathname === '/api/me') return await userMe(req, env, cors);
       if(url.pathname === '/api/checkin' && req.method === 'POST') return await userCheckin(req, env, cors);
@@ -170,7 +139,7 @@ async function userMe(req, env, cors){
   const uid = v.user.id;
   const u = await env.DB.prepare(`SELECT * FROM users WHERE telegram_id=?`).bind(uid).first();
   if(u && u.banned) return Response.json({error:'banned'}, {status:403, headers:cors});
-  await settleCycles(env, uid);
+  
   const [u2, w, refs, hist, unread] = await Promise.all([
     env.DB.prepare(`SELECT * FROM users WHERE telegram_id=?`).bind(uid).first(),
     env.DB.prepare(`SELECT * FROM wallets WHERE telegram_id=?`).bind(uid).first(),
@@ -189,9 +158,11 @@ async function userCheckin(req, env, cors){
   if(u?.banned) return Response.json({error:'banned'}, {status:403, headers:cors});
   const day = todayUtc();
   if(u?.last_checkin === day) return Response.json({error:'already'}, {status:409, headers:cors});
+  
   let streak = (u?.last_checkin === yestUtc()) ? (u.streak||0) : 0; 
   streak = streak >= 7 ? 1 : streak + 1;
-  const amount = streak === 7 ? 52 : 13;
+  const amount = streak === 7 ? 52.0 : 13.0; // Decimals
+  
   try {
       await env.DB.batch([
         env.DB.prepare(`INSERT INTO checkins (telegram_id,day,amount) VALUES (?,?,?)`).bind(uid, day, amount),
@@ -199,6 +170,7 @@ async function userCheckin(req, env, cors){
         env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(uid, amount, 'checkin', 'chk_'+day)
       ]);
   } catch(e) { return Response.json({error:'already'}, {status:409, headers:cors}); }
+  
   await checkReferralActivation(env, uid);
   return Response.json({ok:true, amount, streak}, {headers:cors});
 }
@@ -221,14 +193,14 @@ async function userWithdraw(req, env, cors){
   if((u?.balance||0) < 2000) return Response.json({error:'min'}, {status:400, headers:cors});
   const open = await env.DB.prepare(`SELECT id FROM payouts WHERE owner_id=? AND status='requested'`).bind(uid).first();
   if(open) return Response.json({error:'pending'}, {status:409, headers:cors});
+  
   const amount = u.balance; 
   const id = crypto.randomUUID(); 
-  const cycleDate = nextCycleDate(new Date());
   const ref = await env.DB.prepare(`SELECT referrer_id FROM referrals WHERE referee_id=? AND activated=1 AND expires_at > datetime('now')`).bind(uid).first();
   
   const batchResult = await env.DB.batch([
     env.DB.prepare(`UPDATE users SET balance=balance-? WHERE telegram_id=? AND balance>=?`).bind(amount, uid, amount),
-    env.DB.prepare(`INSERT INTO payouts (id,owner_id,amount_ngn,cycle_date,referrer_id) VALUES (?,?,?,?,?)`).bind(id, uid, amount, cycleDate, ref?.referrer_id || null),
+    env.DB.prepare(`INSERT INTO payouts (id,owner_id,amount_ngn,cycle_date,referrer_id) VALUES (?,?,?,?,?)`).bind(id, uid, amount, todayUtc(), ref?.referrer_id || null),
     env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(uid, -amount, 'withdraw_requested', id)
   ]);
   
@@ -339,13 +311,11 @@ async function postback(req, env){
   const ip = req.headers.get('CF-Connecting-IP')||'';
   const log = status => env.DB.prepare(`INSERT INTO postback_log (query,ip,status) VALUES (?,?,?)`).bind(url.search, ip, status).run();
 
-  // Approve dashboard test pings
   if (url.search.includes('test') || url.search.includes('debug=1') || url.search.includes('test_user')) {
       await log('test_ping_ok');
       return new Response('ok');
   }
 
-  // Handle JSON (MoneyRain)
   const contentType = req.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
     const rawBody = await req.text();
@@ -354,7 +324,10 @@ async function postback(req, env){
     if (!sub1) return new Response('ok');
     const user = await env.DB.prepare(`SELECT telegram_id FROM users WHERE telegram_id=?`).bind(sub1).first();
     if (!user) return new Response('ok');
-    const amount = Math.round(usdAmount * 900); 
+    
+    // MULTIPLY USD BY 900 AND KEEP DECIMALS
+    const amount = parseFloat((usdAmount * 900).toFixed(2)); 
+    
     if (amount > 0) {
         await env.DB.batch([
           env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(user.telegram_id, amount, 'offer_moneyrain', txid),
@@ -366,7 +339,6 @@ async function postback(req, env){
     return new Response('ok');
   }
 
-  // Handle URL Params (All other networks)
   let q = Object.fromEntries(url.searchParams);
   if (req.method === 'POST') {
       const formData = await req.formData().catch(()=>null);
@@ -391,10 +363,12 @@ async function postback(req, env){
 
   let amount = 0;
   const parsedPayout = parseFloat(payout);
+  
+  // If USD, convert to Naira and keep decimals. If Naira, just keep decimals.
   if (q.estimated_price !== undefined || (q.payout !== undefined && parsedPayout < 5)) { 
-      amount = Math.round(parsedPayout * 900); 
+      amount = parseFloat((parsedPayout * 900).toFixed(2)); 
   } else {
-      amount = Math.round(parsedPayout); 
+      amount = parseFloat(parsedPayout.toFixed(2)); 
   }
 
   if (amount > 0) {
