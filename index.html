@@ -115,7 +115,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 <section id="offers" class="screen">
   <div class="h">Offers</div><div class="sub">Pick a task and complete it to earn naira.</div>
   
-  <div class="sec-title">External Tasks</div>
+  <div class="sec-title">Offerwalls</div>
   
   <div class="card">
     <b>MoneyRain Tasks</b>
@@ -135,23 +135,16 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
     <button class="btn" onclick="openLink('bitoffers')">Open Tasks</button>
   </div>
 
-  <div class="sec-title">In-App Tasks</div>
-
   <div class="card">
     <b>Offerwallapi Tasks</b>
     <div class="meta" style="margin-bottom:12px;">More high-paying offers</div>
-    <div id="offerwallapi-container">
-        <div class="meta">Loading tasks...</div>
-    </div>
+    <button class="btn" onclick="openLink('offerwallapi')">Open Tasks</button>
   </div>
 
   <div class="card">
     <b>PubCrypto Tasks</b>
     <div class="meta" style="margin-bottom:12px;">Premium secure offerwall</div>
-    <div id="pubcrypto-container">
-        <div class="meta">Tap to load secure tasks...</div>
-    </div>
-    <button class="btn ghost" onclick="loadPubCrypto()" style="margin-top:10px;">Load PubCrypto Tasks</button>
+    <button class="btn" onclick="openLink('pubcrypto')">Open Tasks</button>
   </div>
 
 </section>
@@ -211,14 +204,18 @@ const CONFIG = {
   PAYOUT_HOUR_UTC: 11,
   CHECKIN_DAILY: 13,
   CHECKIN_BONUS: 52,
-  REFERRAL: { bonus: 100, activateAt: 650, recurring: 5, recurringUnlock: 100, recurringMonths: 12 }
+  REFERRAL: { bonus: 500, activateAt: 1000, recurring: 5, recurringUnlock: 100, recurringMonths: 12 }
 };
 const LIVE = !!CONFIG.API_URL;
 
 const $ = id => document.getElementById(id);
 const tg = window.Telegram && Telegram.WebApp;
 try { if (tg) { tg.ready(); tg.expand(); } } catch (e) {}
-const N = n => '\u20A6' + (Number(n) || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// UPDATED: 4 decimal places maximum, no trailing zeros if not needed
+const N = n => {
+    const num = Number(n) || 0;
+    return '\u20A6' + num.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+};
 const USD = n => '$' + ((n || 0) / 1300).toFixed(2);
 const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
 const clear = e => { while (e.firstChild) e.removeChild(e.firstChild); };
@@ -308,60 +305,35 @@ function render() {
   if (!(me.history || []).length) { const c = h('div', 'card'); c.appendChild(h('div', 'meta', 'No activity yet.')); hist.appendChild(c); }
   (me.history || []).forEach(x => { const r = h('div', 'row'); r.appendChild(h('span', 'meta', String(x.reason || ''))); const st = x.status === 'rejected' ? ' no' : x.status === 'requested' ? '' : ' ok'; r.appendChild(h('span', 'badge' + st, ((x.delta || 0) >= 0 ? '+' : '') + N(x.delta))); hist.appendChild(r); });
   $('bellDot').classList.toggle('on', (me.unread || 0) > 0);
-
-  // Load In-App Iframes
-  loadIframes();
 }
 
-let iframesLoaded = false;
-function loadIframes() {
-    if (!me || !me.uid || me.uid === '0' || iframesLoaded) return;
-    
-    // 1. Offerwallapi (Embedded Iframe)
-    $('offerwallapi-container').innerHTML = `<iframe src="https://offerwallapi.com/offerwall/07fd34e039b11023a1a08754c78bf480/${me.uid}" style="width:100%;height:700px;border:0;" scrolling="auto"></iframe>`;
-    
-    iframesLoaded = true;
-}
-
-async function loadPubCrypto() {
-    if (!me || !me.uid) return toast('Please wait for your ID to load');
-    $('pubcrypto-container').innerHTML = `<div class="meta">Requesting secure URL...</div>`;
-    const r = await call('/api/pubcrypto-url', {});
-    if (r.error || !r.url) {
-        $('pubcrypto-container').innerHTML = `<div class="meta" style="color:var(--red)">Could not load PubCrypto. Please try again.</div>`;
-        return;
-    }
-    $('pubcrypto-container').innerHTML = `
-      <iframe data-pubcrypto-offerwall src="${r.url}" title="Offerwall" width="100%" height="800" frameborder="0" style="display:block;width:100%;max-width:100%;border:0" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>
-    `;
-    // PubCrypto Resize Script
-    const script = document.createElement('script');
-    script.textContent = `
-      (function () {
-        window.addEventListener("message", function (event) {
-          if (event.origin !== "https://pub.cryptolinkforearn.com" || !event.data || event.data.type !== "pubcrypto:offerwall-resize") return;
-          var height = Math.round(Math.min(5000, Math.max(360, Number(event.data.height) || 800)));
-          var frames = document.querySelectorAll("iframe[data-pubcrypto-offerwall]");
-          for (var index = 0; index < frames.length; index += 1) {
-            if (frames[index].contentWindow === event.source) frames[index].style.height = height + "px";
-          }
-        });
-      }());
-    `;
-    document.head.appendChild(script);
-}
-
+// ==========================================
+// FORCED EXTERNAL WEBVIEW FOR ALL NETWORKS
+// ==========================================
 async function openLink(type) {
   const uid = (me && me.uid) ? me.uid : UID;
   if (!uid || uid === '0') return toast('Telegram ID not found. Please restart the app.');
   
   let url = '';
-  if (type === 'moneyrain') url = `https://offerwall.moneyrain.top/wall.php?pub=2431&uid=${uid}`;
-  if (type === 'adslab') url = `https://adslab.me/task-EkPzIkTBkGcc/${uid}`;
-  if (type === 'bitoffers') url = `https://bitsoffers.com/offerwall/?userid=${uid}&key=mZHdhpSQ4jcyov5bFDkO`;
   
-  // FORCE EXTERNAL BROWSER OPEN (Chrome/Safari) so user can minimize
-  window.open(url, '_blank');
+  if (type === 'pubcrypto') {
+      toast('Generating secure link...');
+      const r = await call('/api/pubcrypto-url', {});
+      if (r.error || !r.url) return toast('Could not generate PubCrypto link');
+      url = r.url;
+  } else {
+      if (type === 'moneyrain') url = `https://offerwall.moneyrain.top/wall.php?pub=2431&uid=${uid}`;
+      if (type === 'adslab') url = `https://adslab.me/task-EkPzIkTBkGcc/${uid}`;
+      if (type === 'bitoffers') url = `https://bitsoffers.com/offerwall/?userid=${uid}&key=mZHdhpSQ4jcyov5bFDkO`;
+      if (type === 'offerwallapi') url = `https://offerwallapi.com/offerwall/07fd34e039b11023a1a08754c78bf480/${uid}`;
+  }
+
+  // Force it to open in Telegram's WebView overlay so it can be minimized
+  if (tg && tg.openLink) {
+      tg.openLink(url, { try_instant_view: false });
+  } else {
+      window.open(url, '_blank');
+  }
 }
 
 async function refresh() { 
@@ -413,8 +385,31 @@ $('withdrawBtn').onclick = async () => {
 $('copyBtn').onclick = async () => { try { await navigator.clipboard.writeText($('refLink').textContent); } catch (e) {} toast('Link copied'); };
 $('bellBtn').onclick = async () => {
   const r = await Data.messages(), list = (r && r.messages) || [], box = $('msgList'); clear(box);
-  if (!list.length) box.appendChild(h('p', 'sub', 'No messages yet.'));
-  list.forEach(m => { const c = h('div', 'row'); c.style.display = 'block'; c.appendChild(h('b', '', String(m.title || ''))); const b = h('div', 'meta', String(m.body || '')); b.style.whiteSpace = 'pre-wrap'; c.appendChild(b); box.appendChild(c); });
+
+  // --- HARDCODED WELCOME MESSAGE ---
+  const welcomeHtml = `
+    <div class="row" style="display:block; background:var(--panel2); border-color:var(--gold);">
+      <b style="color:var(--gold); font-size: 14px;">Welcome to CryptoNaira! 👋</b>
+      <div class="meta" style="margin-top:8px; white-space:pre-wrap; color:var(--bone);">To ensure you get credited for every offer, please follow these steps carefully:
+
+1. Choose a Task: Tap any offerwall to open the tasks.
+2. Complete the Task: Follow the instructions on the offer page (e.g., play a game, answer a survey).
+3. IMPORTANT – Minimize and Return: After finishing, DO NOT CLOSE the window. Tap the Back arrow (←) or Minimize to return to CryptoNaira.
+4. Get Credited: Your balance will update automatically the second you return. You will see an "Offer Credited" popup.
+
+Note: Do not use VPNs or try to fake tasks. Our system blocks fraudulent activity and you will not be paid.
+
+Good luck and happy earning!</div>
+    </div>
+  `;
+  box.innerHTML = welcomeHtml;
+
+  if (!list.length) {
+      // If no admin messages, just leave the welcome message
+  } else {
+      list.forEach(m => { const c = h('div', 'row'); c.style.display = 'block'; c.appendChild(h('b', '', String(m.title || ''))); const b = h('div', 'meta', String(m.body || '')); b.style.whiteSpace = 'pre-wrap'; c.appendChild(b); box.appendChild(c); });
+  }
+
   $('sheet').classList.add('on'); $('bellDot').classList.remove('on'); Data.markRead();
 };
 $('sheetClose').onclick = () => $('sheet').classList.remove('on');
