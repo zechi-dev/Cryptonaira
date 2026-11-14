@@ -51,18 +51,22 @@ async function creditOneTime(env, referrerId, refereeId){
   const ref = await env.DB.prepare(`SELECT * FROM referrals WHERE referrer_id=? AND referee_id=? AND activated=0`).bind(referrerId, refereeId).first();
   if(!ref) return;
   const u = await env.DB.prepare(`SELECT earned_total FROM users WHERE telegram_id=?`).bind(refereeId).first();
-  if(!u || u.earned_total < 650) return;
+  // UPDATED: Referee must earn ₦1,000
+  if(!u || u.earned_total < 1000) return; 
   const referrer = await env.DB.prepare(`SELECT 1 FROM users WHERE telegram_id=?`).bind(referrerId).first();
   if(!referrer) return;
   await env.DB.batch([
     env.DB.prepare(`UPDATE referrals SET activated=1, activated_at=datetime('now') WHERE referrer_id=? AND referee_id=?`).bind(referrerId, refereeId),
-    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(referrerId, 100.0, 'referral_100', String(refereeId)),
-    env.DB.prepare(`UPDATE users SET balance=balance+100.0, earned_total=earned_total+100.0 WHERE telegram_id=?`).bind(referrerId)
+    // UPDATED: Referrer gets ₦500
+    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(referrerId, 500.0, 'referral_500', String(refereeId)),
+    env.DB.prepare(`UPDATE users SET balance=balance+500.0, earned_total=earned_total+500.0 WHERE telegram_id=?`).bind(referrerId)
   ]);
 }
+
 async function checkReferralActivation(env, refereeId){
   const u = await env.DB.prepare(`SELECT earned_total FROM users WHERE telegram_id=?`).bind(refereeId).first();
-  if(!u || u.earned_total < 650) return;
+  // UPDATED: Check if referee earned ₦1,000
+  if(!u || u.earned_total < 1000) return; 
   const refs = await env.DB.prepare(`SELECT referrer_id FROM referrals WHERE referee_id=? AND activated=0`).bind(refereeId).all();
   for(const r of refs.results){ await creditOneTime(env, r.referrer_id, refereeId); }
 }
@@ -139,7 +143,6 @@ async function userMe(req, env, cors){
   const uid = v.user.id;
   const u = await env.DB.prepare(`SELECT * FROM users WHERE telegram_id=?`).bind(uid).first();
   if(u && u.banned) return Response.json({error:'banned'}, {status:403, headers:cors});
-  
   const [u2, w, refs, hist, unread] = await Promise.all([
     env.DB.prepare(`SELECT * FROM users WHERE telegram_id=?`).bind(uid).first(),
     env.DB.prepare(`SELECT * FROM wallets WHERE telegram_id=?`).bind(uid).first(),
@@ -158,11 +161,9 @@ async function userCheckin(req, env, cors){
   if(u?.banned) return Response.json({error:'banned'}, {status:403, headers:cors});
   const day = todayUtc();
   if(u?.last_checkin === day) return Response.json({error:'already'}, {status:409, headers:cors});
-  
   let streak = (u?.last_checkin === yestUtc()) ? (u.streak||0) : 0; 
   streak = streak >= 7 ? 1 : streak + 1;
-  const amount = streak === 7 ? 52.0 : 13.0; // Decimals
-  
+  const amount = streak === 7 ? 52.0 : 13.0;
   try {
       await env.DB.batch([
         env.DB.prepare(`INSERT INTO checkins (telegram_id,day,amount) VALUES (?,?,?)`).bind(uid, day, amount),
@@ -170,7 +171,6 @@ async function userCheckin(req, env, cors){
         env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(uid, amount, 'checkin', 'chk_'+day)
       ]);
   } catch(e) { return Response.json({error:'already'}, {status:409, headers:cors}); }
-  
   await checkReferralActivation(env, uid);
   return Response.json({ok:true, amount, streak}, {headers:cors});
 }
@@ -193,17 +193,14 @@ async function userWithdraw(req, env, cors){
   if((u?.balance||0) < 2000) return Response.json({error:'min'}, {status:400, headers:cors});
   const open = await env.DB.prepare(`SELECT id FROM payouts WHERE owner_id=? AND status='requested'`).bind(uid).first();
   if(open) return Response.json({error:'pending'}, {status:409, headers:cors});
-  
   const amount = u.balance; 
   const id = crypto.randomUUID(); 
   const ref = await env.DB.prepare(`SELECT referrer_id FROM referrals WHERE referee_id=? AND activated=1 AND expires_at > datetime('now')`).bind(uid).first();
-  
   const batchResult = await env.DB.batch([
     env.DB.prepare(`UPDATE users SET balance=balance-? WHERE telegram_id=? AND balance>=?`).bind(amount, uid, amount),
     env.DB.prepare(`INSERT INTO payouts (id,owner_id,amount_ngn,cycle_date,referrer_id) VALUES (?,?,?,?,?)`).bind(id, uid, amount, todayUtc(), ref?.referrer_id || null),
     env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(uid, -amount, 'withdraw_requested', id)
   ]);
-  
   if (batchResult[0].meta.changes === 0) return Response.json({error:'insufficient_funds'}, {status:400, headers:cors});
   return Response.json({ok:true, amount}, {headers:cors});
 }
@@ -305,7 +302,6 @@ async function adminMessageSend(req, env, cors){
   return Response.json({ok:true}, {headers:cors});
 }
 
-/* ============ POSTBACK (FORGIVING, SINGLE ROUTE) ============ */
 async function postback(req, env){
   const url = new URL(req.url);
   const ip = req.headers.get('CF-Connecting-IP')||'';
@@ -324,10 +320,7 @@ async function postback(req, env){
     if (!sub1) return new Response('ok');
     const user = await env.DB.prepare(`SELECT telegram_id FROM users WHERE telegram_id=?`).bind(sub1).first();
     if (!user) return new Response('ok');
-    
-    // MULTIPLY USD BY 900 AND KEEP DECIMALS
-    const amount = parseFloat((usdAmount * 900).toFixed(2)); 
-    
+    const amount = parseFloat((usdAmount * 900).toFixed(4)); // 4 decimals
     if (amount > 0) {
         await env.DB.batch([
           env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(user.telegram_id, amount, 'offer_moneyrain', txid),
@@ -363,12 +356,10 @@ async function postback(req, env){
 
   let amount = 0;
   const parsedPayout = parseFloat(payout);
-  
-  // If USD, convert to Naira and keep decimals. If Naira, just keep decimals.
   if (q.estimated_price !== undefined || (q.payout !== undefined && parsedPayout < 5)) { 
-      amount = parseFloat((parsedPayout * 900).toFixed(2)); 
+      amount = parseFloat((parsedPayout * 900).toFixed(4)); 
   } else {
-      amount = parseFloat(parsedPayout.toFixed(2)); 
+      amount = parseFloat(parsedPayout.toFixed(4)); 
   }
 
   if (amount > 0) {
