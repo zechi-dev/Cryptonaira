@@ -162,7 +162,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 <section id="wallet" class="screen">
   <div class="h">Wallet</div><div class="sub" id="walletRule"></div>
   <div class="card">
-    <div class="label">Balance</div><div class="amount" id="balWallet" style="font-size:44px">&#8358;0</div><div class="meta" id="balUsd"></div>
+    <div class="label">Balance</div><div class="amount" id="balWallet" style="font-size:44px">&#8358;0.00</div><div class="meta" id="balUsd"></div>
     <div class="label" style="margin-top:20px">Payout account</div>
     <label class="fl" for="bankSearch">Bank</label>
     <div class="pick">
@@ -211,7 +211,8 @@ const LIVE = !!CONFIG.API_URL;
 const $ = id => document.getElementById(id);
 const tg = window.Telegram && Telegram.WebApp;
 try { if (tg) { tg.ready(); tg.expand(); } } catch (e) {}
-const N = n => '\u20A6' + Math.round(n || 0).toLocaleString();
+// UPDATED FORMATTING FUNCTION FOR DECIMALS
+const N = n => '\u20A6' + (Number(n) || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const USD = n => '$' + ((n || 0) / 1300).toFixed(2);
 const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
 const clear = e => { while (e.firstChild) e.removeChild(e.firstChild); };
