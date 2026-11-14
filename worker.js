@@ -11,7 +11,7 @@ async function signBytes(keyBytes, msg){
 }
 function hexToBytes(h){const a=new Uint8Array(h.length/2);for(let i=0;i<a.length;i++)a[i]=parseInt(h.substr(i*2,2),16);return a;}
 
-// Custom MD5 function for CryptoLink and Offerwallapi
+// MD5 function for signatures
 function md5(string) {
   function RotateLeft(lValue, iShiftBits) { return (lValue<<iShiftBits) | (lValue>>>(32-iShiftBits)); }
   function AddUnsigned(lX,lY) {
@@ -206,11 +206,19 @@ async function getCryptoLinkIframe(req, env, cors){
     try {
         const res = await fetch('https://pub.cryptolinkforearn.com/api/publisher/embed-tokens', {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + env.CRYPTOLINK_API_KEY, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ site_key: 'site_f7392231dfc7fc58f92845736d22102808e9b817', sub_id: String(v.user.id) })
+            headers: { 
+                'Authorization': 'Bearer ' + env.CRYPTOLINK_API_KEY, 
+                'Content-Type': 'application/json' 
+            },
+            body: JSON.stringify({ 
+                site_key: 'site_f7392231dfc7fc58f92845736d22102808e9b817', 
+                sub_id: String(v.user.id),
+                origin: 'https://cryptonaira.pages.dev',
+                theme: 'dark'
+            })
         });
         const data = await res.json();
-        return Response.json({url: data.iframe_url || data.url}, {headers:cors});
+        return Response.json({url: data.iframe_url}, {headers:cors});
     } catch(e) { return Response.json({error:'fetch_failed'}, {status:500, headers:cors}); }
 }
 
@@ -439,11 +447,52 @@ async function postback(req, env){
 
   let network = 'unknown';
   if (q.uid && q.signature) { network = 'adslab'; } 
-  else if (q.subId && q.signature && q.transId && q.reward_pb !== undefined) { network = 'cryptolink'; }
+  else if (q.subId && q.transId && q.reward_pb !== undefined) { network = 'cryptolink'; }
   else if (q.subId && q.signature && q.transId && q.reward !== undefined) { network = 'offerwallapi'; }
 
+  // CRYPTOLINK SPECIFIC LOGIC
+  if (network === 'cryptolink') {
+      const status = parseInt(q.status);
+      if (status === 0) { await log('cryptolink_pending'); return new Response('ok'); } // Pending, do nothing
+      
+      const sub1 = q.subId;
+      const txid = q.transId;
+      const payout = parseFloat(q.reward_pb);
+      const amount = status === 1 ? payout : -payout; // status 1 = credit, status 2 = chargeback
+
+      // 1. Verify Signature
+      if (env.CRYPTOLINK_SECRET) {
+          const str = `${sub1}${txid}${q.reward_pb}${env.CRYPTOLINK_SECRET}`;
+          const expected = md5(str);
+          if (q.signature !== expected) { await log('cryptolink_bad_sig'); return new Response('forbidden', {status:403}); }
+      }
+
+      // 2. Deduplicate (Only for credits, status 1)
+      if (status === 1) {
+          const seen = await env.DB.prepare(`SELECT 1 FROM clicks WHERE txid=?`).bind(txid).first();
+          if (seen) { await log('cryptolink_dup'); return new Response('ok'); }
+      }
+
+      // 3. Check User
+      let telegramId = null;
+      if (/^\d+$/.test(sub1)) { telegramId = parseInt(sub1); }
+      if(!telegramId){ await log('cryptolink_no_user'); return new Response('ok'); }
+
+      // 4. Credit / Chargeback
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+? WHERE telegram_id=?`).bind(amount, status === 1 ? amount : 0, telegramId),
+        env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(telegramId, amount, `offer_cryptolink_${status}`, txid),
+        status === 1 ? env.DB.prepare(`INSERT INTO clicks (sub_id, telegram_id, offer_id, payout_ngn, status, txid) VALUES (?,?,?,?,?,?)`).bind(txid, telegramId, 'cryptolink', amount, 'credited', txid) : env.DB.prepare(`SELECT 1`)
+      ]);
+      
+      await checkReferralActivation(env, telegramId);
+      await log(`cryptolink_credited_status_${status}`);
+      return new Response('ok');
+  }
+
+  // STANDARD LOGIC FOR OTHER NETWORKS
   const sub1 = q.sub1 || q.subId || q.userid || q.userId || q.uid || q.telegram_id;
-  const payout = q.payout || q.amount || q.estimated_price || q.reward || q.reward_pb;
+  const payout = q.payout || q.amount || q.estimated_price || q.reward;
   const txid = q.txid || q.transId || q.transaction_id || q.ymid;
 
   if(!sub1 || !payout || !txid){ await log('bad_params'); return new Response('bad', {status:400}); }
@@ -456,12 +505,6 @@ async function postback(req, env){
   else { const c = await env.DB.prepare(`SELECT telegram_id FROM clicks WHERE sub_id=?`).bind(sub1).first(); if(c) telegramId = c.telegram_id; }
   if(!telegramId){ await log('no_user'); return new Response('ok'); }
 
-  // MD5 SIGNATURE VERIFICATION
-  if (network === 'cryptolink' && env.CRYPTOLINK_SECRET) {
-      const str = `${sub1}${txid}${payout}${env.CRYPTOLINK_SECRET}`;
-      const expected = md5(str);
-      if (q.signature !== expected) { await log('cryptolink_bad_sig'); return new Response('forbidden', {status:403}); }
-  }
   if (network === 'offerwallapi' && env.OFFERWALLAPI_SECRET) {
       const str = `${sub1}${txid}${payout}${env.OFFERWALLAPI_SECRET}`;
       const expected = md5(str);
