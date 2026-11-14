@@ -51,21 +51,18 @@ async function creditOneTime(env, referrerId, refereeId){
   const ref = await env.DB.prepare(`SELECT * FROM referrals WHERE referrer_id=? AND referee_id=? AND activated=0`).bind(referrerId, refereeId).first();
   if(!ref) return;
   const u = await env.DB.prepare(`SELECT earned_total FROM users WHERE telegram_id=?`).bind(refereeId).first();
-  // UPDATED: Referee must earn ₦1,000
   if(!u || u.earned_total < 1000) return; 
   const referrer = await env.DB.prepare(`SELECT 1 FROM users WHERE telegram_id=?`).bind(referrerId).first();
   if(!referrer) return;
   await env.DB.batch([
     env.DB.prepare(`UPDATE referrals SET activated=1, activated_at=datetime('now') WHERE referrer_id=? AND referee_id=?`).bind(referrerId, refereeId),
-    // UPDATED: Referrer gets ₦500
-    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(referrerId, 500.0, 'referral_500', String(refereeId)),
+    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(referrerId, 500.0, 'referral_500', String(refereeId), 'Referral'),
     env.DB.prepare(`UPDATE users SET balance=balance+500.0, earned_total=earned_total+500.0 WHERE telegram_id=?`).bind(referrerId)
   ]);
 }
 
 async function checkReferralActivation(env, refereeId){
   const u = await env.DB.prepare(`SELECT earned_total FROM users WHERE telegram_id=?`).bind(refereeId).first();
-  // UPDATED: Check if referee earned ₦1,000
   if(!u || u.earned_total < 1000) return; 
   const refs = await env.DB.prepare(`SELECT referrer_id FROM referrals WHERE referee_id=? AND activated=0`).bind(refereeId).all();
   for(const r of refs.results){ await creditOneTime(env, r.referrer_id, refereeId); }
@@ -147,7 +144,7 @@ async function userMe(req, env, cors){
     env.DB.prepare(`SELECT * FROM users WHERE telegram_id=?`).bind(uid).first(),
     env.DB.prepare(`SELECT * FROM wallets WHERE telegram_id=?`).bind(uid).first(),
     env.DB.prepare(`SELECT activated, COUNT(*) c FROM referrals WHERE referrer_id=? GROUP BY activated`).bind(uid).all(),
-    env.DB.prepare(`SELECT delta,reason,created_at FROM ledger WHERE owner_id=? ORDER BY id DESC LIMIT 30`).bind(uid).all(),
+    env.DB.prepare(`SELECT delta,reason,network,created_at FROM ledger WHERE owner_id=? ORDER BY id DESC LIMIT 30`).bind(uid).all(),
     env.DB.prepare(`SELECT COUNT(*) c FROM messages m WHERE NOT EXISTS (SELECT 1 FROM message_reads r WHERE r.message_id=m.id AND r.reader_id=?)`).bind(uid).first()
   ]);
   const rc = refs.results.reduce((a,r) => { a[r.activated?'qualified':'pending'] = r.c; return a; }, {});
@@ -168,7 +165,7 @@ async function userCheckin(req, env, cors){
       await env.DB.batch([
         env.DB.prepare(`INSERT INTO checkins (telegram_id,day,amount) VALUES (?,?,?)`).bind(uid, day, amount),
         env.DB.prepare(`UPDATE users SET streak=?,last_checkin=?,balance=balance+?,earned_total=earned_total+? WHERE telegram_id=?`).bind(streak, day, amount, amount, uid),
-        env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(uid, amount, 'checkin', 'chk_'+day)
+        env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(uid, amount, 'checkin', 'chk_'+day, 'Check-in')
       ]);
   } catch(e) { return Response.json({error:'already'}, {status:409, headers:cors}); }
   await checkReferralActivation(env, uid);
@@ -199,7 +196,7 @@ async function userWithdraw(req, env, cors){
   const batchResult = await env.DB.batch([
     env.DB.prepare(`UPDATE users SET balance=balance-? WHERE telegram_id=? AND balance>=?`).bind(amount, uid, amount),
     env.DB.prepare(`INSERT INTO payouts (id,owner_id,amount_ngn,cycle_date,referrer_id) VALUES (?,?,?,?,?)`).bind(id, uid, amount, todayUtc(), ref?.referrer_id || null),
-    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(uid, -amount, 'withdraw_requested', id)
+    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(uid, -amount, 'withdraw_requested', id, 'Withdrawal')
   ]);
   if (batchResult[0].meta.changes === 0) return Response.json({error:'insufficient_funds'}, {status:400, headers:cors});
   return Response.json({ok:true, amount}, {headers:cors});
@@ -279,13 +276,13 @@ async function adminPayoutAction(req, env, cors){
   if(status === 'paid'){
     await env.DB.batch([
       env.DB.prepare(`UPDATE payouts SET status='paid', paid_at=datetime('now') WHERE id=?`).bind(id),
-      env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(p.owner_id, 0, 'payout_paid', id)
+      env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(p.owner_id, 0, 'payout_paid', id, 'Payout')
     ]);
   } else {
     await env.DB.batch([
       env.DB.prepare(`UPDATE payouts SET status='rejected', rejected_at=datetime('now') WHERE id=?`).bind(id),
       env.DB.prepare(`UPDATE users SET balance=balance+? WHERE telegram_id=?`).bind(p.amount_ngn, p.owner_id),
-      env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(p.owner_id, p.amount_ngn, 'payout_refunded', id)
+      env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(p.owner_id, p.amount_ngn, 'payout_refunded', id, 'Refund')
     ]);
   }
   return Response.json({ok:true}, {headers:cors});
@@ -320,10 +317,10 @@ async function postback(req, env){
     if (!sub1) return new Response('ok');
     const user = await env.DB.prepare(`SELECT telegram_id FROM users WHERE telegram_id=?`).bind(sub1).first();
     if (!user) return new Response('ok');
-    const amount = parseFloat((usdAmount * 900).toFixed(4)); // 4 decimals
+    const amount = parseFloat((usdAmount * 900).toFixed(4)); 
     if (amount > 0) {
         await env.DB.batch([
-          env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(user.telegram_id, amount, 'offer_moneyrain', txid),
+          env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(user.telegram_id, amount, 'offer_moneyrain', txid, 'MoneyRain'),
           env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(amount, amount, user.telegram_id)
         ]);
         await checkReferralActivation(env, user.telegram_id);
@@ -362,15 +359,22 @@ async function postback(req, env){
       amount = parseFloat(parsedPayout.toFixed(4)); 
   }
 
+  // Identify Network for the log
+  let networkName = 'Unknown';
+  if (q.uid) networkName = 'Adslab';
+  else if (q.subId && q.reward_pb !== undefined) networkName = 'PubCrypto';
+  else if (q.subId && q.reward !== undefined) networkName = 'Offerwallapi';
+  else if (q.userid) networkName = 'BitOffers';
+
   if (amount > 0) {
       try {
           await env.DB.batch([
             env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(amount, amount, telegramId),
-            env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref) VALUES (?,?,?,?)`).bind(telegramId, amount, 'offer_credit', txid),
-            env.DB.prepare(`INSERT INTO clicks (sub_id, telegram_id, offer_id, payout_ngn, status, txid) VALUES (?,?,?,?,?,?) ON CONFLICT(sub_id) DO UPDATE SET status='credited'`).bind(txid, telegramId, 'network', amount, 'credited', txid)
+            env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(telegramId, amount, 'offer_credit', txid, networkName),
+            env.DB.prepare(`INSERT INTO clicks (sub_id, telegram_id, offer_id, payout_ngn, status, txid, network) VALUES (?,?,?,?,?,?,?) ON CONFLICT(sub_id) DO UPDATE SET status='credited', network=excluded.network`).bind(txid, telegramId, networkName, amount, 'credited', txid, networkName)
           ]);
           await checkReferralActivation(env, telegramId);
-          await log('credited');
+          await log(`credited_${networkName}`);
       } catch(e) {
           await log('db_error');
       }
