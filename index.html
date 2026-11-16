@@ -123,7 +123,13 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <div class="card">
     <b>Monetag Ads</b>
     <div class="meta" style="margin-bottom:12px;">Watch a short video to earn</div>
-    <button class="btn" onclick="watchMonetagAd()">Watch Ad Now</button>
+    <button class="btn" id="adBtn" onclick="watchMonetagAd()">Watch Ad Now</button>
+  </div>
+
+  <div class="card">
+    <b>Monetag Click to Earn</b>
+    <div class="meta" style="margin-bottom:12px;">Tap the button, let the page open and stay on it for a few seconds, then come back to get paid</div>
+    <button class="btn" id="popBtn" onclick="monetagClickToEarn()">Click to Earn</button>
   </div>
 
   <div class="card">
@@ -243,7 +249,7 @@ async function call(path, body) {
   } catch (e) { return { error: 'network' }; }
 }
 let UID = '0';
-const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem('cn_' + k + '_' + UID)) || d; } catch (e) { return d; } }, set: (k, v) => localStorage.setItem('cn_' + k + '_' + UID, JSON.stringify(v)) };
+const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem('cn_' + k + '_' + UID)) || d; } catch (e) { return d; } }, set: (k, v) => { try { localStorage.setItem('cn_' + k + '_' + UID, JSON.stringify(v)); } catch (e) {} } };
 const dayKey = (off = 0) => { const d = new Date(); d.setUTCDate(d.getUTCDate() - off); return d.toISOString().slice(0, 10); };
 
 const Data = LIVE ? {
@@ -267,15 +273,18 @@ const Data = LIVE ? {
   async withdraw() { return { error: 'preview' }; }, async messages() { return { messages: [] }; }, async markRead() { return {}; }
 };
 
-let me = null, chosenBank = null, lastBalance = 0;
+let me = null, chosenBank = null, lastBalance = 0, quietCredit = false;
 
 function render() {
   if (!me || me.error) return;
-  const bal = me.balance || 0, done = me.last_checkin === dayKey(), acct = me.account;
+  const bal = me.balance || 0, done = me.last_checkin === dayKey();
+  // FIX: the server returns the saved account as `wallet` (snake_case); preview mode uses `account` (camelCase)
+  const acct = me.account || (me.wallet ? { bankName: me.wallet.bank_name, acctNum: me.wallet.acct_num, acctName: me.wallet.acct_name } : null);
   const next = nextPayout(), days = Math.ceil((next - new Date()) / 86400000);
   const dayName = next.toLocaleDateString(undefined, { weekday: 'long' });
 
-  if (lastBalance > 0 && bal > lastBalance) {
+  // FIX: don't show "Offer Credited" over the check-in toast
+  if (!quietCredit && lastBalance > 0 && bal > lastBalance) {
       const earned = bal - lastBalance;
       toast(`Offer Credited! +${N(earned)}`);
   }
@@ -308,26 +317,59 @@ function render() {
 }
 
 // ==========================================
-// MONETAG (Corrected: ymid only, no 'pop')
+// MONETAG REWARDED INTERSTITIAL (Watch Ad)
 // ==========================================
+let adBusy = false;
 async function watchMonetagAd() {
   const uid = (me && me.uid) ? me.uid : UID;
   if (!uid || uid === '0') return toast('Please wait for your ID to load');
-  
+  if (adBusy) return;
+
   const ymid = uid + '_' + Date.now();
 
   if (typeof show_12253468 !== 'function') {
       return toast('Ad system is loading. Please wait.');
   }
 
+  adBusy = true;
   toast('Loading Ad...');
 
   // Documentation says: show_XXX({ ymid })
-  show_12253468({ ymid: ymid }).then(() => {
+  show_12253468({ ymid: ymid, requestVar: 'watch_ad' }).then(() => {
       toast('Ad finished! Crediting...');
       setTimeout(async () => { await refresh(); }, 3000);
   }).catch(e => {
       toast('Ad was skipped or failed to load.');
+  }).finally(() => { adBusy = false; });
+}
+
+// ==========================================
+// MONETAG REWARDED POPUP (Click to Earn)
+// Must be called directly from a user tap. Use the options object:
+// the 'pop' string shorthand drops ymid, so the postback would be rejected.
+// ==========================================
+let popBusy = false;
+function monetagClickToEarn() {
+  const uid = (me && me.uid) ? me.uid : UID;
+  if (!uid || uid === '0') return toast('Please wait for your ID to load');
+  if (popBusy) return;
+
+  if (typeof show_12253468 !== 'function') {
+      return toast('Ad system is loading. Please wait.');
+  }
+
+  popBusy = true;
+  const btn = $('popBtn'); if (btn) btn.disabled = true;
+  const ymid = uid + '_pop_' + Date.now();
+
+  show_12253468({ type: 'pop', ymid: ymid, requestVar: 'click_to_earn' }).then(() => {
+      toast('Page opened. Stay on it a few seconds, then come back.');
+      setTimeout(async () => { await refresh(); }, 5000);
+  }).catch(e => {
+      toast('No offer available right now. Try again shortly.');
+  }).finally(() => {
+      // short cooldown so rapid taps can't spam the ad network
+      setTimeout(() => { popBusy = false; if (btn) btn.disabled = false; }, 4000);
   });
 }
 
@@ -395,7 +437,8 @@ $('checkBtn').onclick = async () => {
   else if (r.streak === 7) toast('7-day streak! +' + N(r.amount));
   else if (r.amount > 0) toast('Day ' + r.streak + ' of 7 \u2014 +' + N(r.amount));
   else toast('Day ' + r.streak + ' of 7 \u2705');
-  await refresh(); 
+  quietCredit = true;
+  try { await refresh(); } finally { quietCredit = false; }
 };
 $('walletBtn').onclick = async () => {
   const num = $('acctNum').value.trim(), name = $('acctName').value.trim();
@@ -408,9 +451,10 @@ $('walletBtn').onclick = async () => {
 };
 $('withdrawBtn').onclick = async () => {
   $('withdrawBtn').disabled = true; const r = await Data.withdraw();
-  const msg = { min: 'Minimum payout is ' + N(CONFIG.MIN_PAYOUT), wallet: 'Save your bank account first', pending: 'You already have a payout waiting', preview: 'Payouts start after launch' }[r.error];
+  const msg = { min: 'Minimum payout is ' + N(CONFIG.MIN_PAYOUT), wallet: 'Save your bank account first', pending: 'You already have a payout waiting', preview: 'Payouts start after launch', banned: 'Your account cannot request payouts', insufficient_funds: 'Balance changed. Please try again' }[r.error];
   if (msg) toast(msg); else if (r.error) toast('Could not request payout'); else toast('Payout requested. Paid on the next Saturday.');
-  await refresh();
+  quietCredit = true;
+  try { await refresh(); } finally { quietCredit = false; }
 };
 $('copyBtn').onclick = async () => { try { await navigator.clipboard.writeText($('refLink').textContent); } catch (e) {} toast('Link copied'); };
 
@@ -435,7 +479,7 @@ async function openMessageBox() {
   $('bellDot').classList.remove('on'); 
   Data.markRead();
   
-  localStorage.setItem('last_popup_' + UID, Date.now().toString());
+  try { localStorage.setItem('last_popup_' + UID, Date.now().toString()); } catch (e) {}
 }
 
 $('bellBtn').onclick = openMessageBox;
@@ -470,7 +514,8 @@ document.addEventListener('visibilitychange', () => {
     await refresh(); 
     
     if (UID && UID !== '0') {
-        const lastPopup = localStorage.getItem('last_popup_' + UID);
+        let lastPopup = null;
+        try { lastPopup = localStorage.getItem('last_popup_' + UID); } catch (e) {}
         const now = Date.now();
         const oneDay = 24 * 60 * 60 * 1000;
         
