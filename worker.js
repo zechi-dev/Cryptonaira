@@ -51,19 +51,19 @@ async function creditOneTime(env, referrerId, refereeId){
   const ref = await env.DB.prepare(`SELECT * FROM referrals WHERE referrer_id=? AND referee_id=? AND activated=0`).bind(referrerId, refereeId).first();
   if(!ref) return;
   const u = await env.DB.prepare(`SELECT earned_total FROM users WHERE telegram_id=?`).bind(refereeId).first();
-  if(!u || u.earned_total < 1000) return; 
+  if(!u || u.earned_total < 650) return; 
   const referrer = await env.DB.prepare(`SELECT 1 FROM users WHERE telegram_id=?`).bind(referrerId).first();
   if(!referrer) return;
   await env.DB.batch([
     env.DB.prepare(`UPDATE referrals SET activated=1, activated_at=datetime('now') WHERE referrer_id=? AND referee_id=?`).bind(referrerId, refereeId),
-    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(referrerId, 500.0, 'referral_500', String(refereeId), 'Referral'),
-    env.DB.prepare(`UPDATE users SET balance=balance+500.0, earned_total=earned_total+500.0 WHERE telegram_id=?`).bind(referrerId)
+    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(referrerId, 100.0, 'referral_100', String(refereeId), 'Referral'),
+    env.DB.prepare(`UPDATE users SET balance=balance+100.0, earned_total=earned_total+100.0 WHERE telegram_id=?`).bind(referrerId)
   ]);
 }
 
 async function checkReferralActivation(env, refereeId){
   const u = await env.DB.prepare(`SELECT earned_total FROM users WHERE telegram_id=?`).bind(refereeId).first();
-  if(!u || u.earned_total < 1000) return; 
+  if(!u || u.earned_total < 650) return; 
   const refs = await env.DB.prepare(`SELECT referrer_id FROM referrals WHERE referee_id=? AND activated=0`).bind(refereeId).all();
   for(const r of refs.results){ await creditOneTime(env, r.referrer_id, refereeId); }
 }
@@ -299,16 +299,19 @@ async function adminMessageSend(req, env, cors){
   return Response.json({ok:true}, {headers:cors});
 }
 
+/* ============ POSTBACK (MONETAG + OTHERS) ============ */
 async function postback(req, env){
   const url = new URL(req.url);
   const ip = req.headers.get('CF-Connecting-IP')||'';
   const log = status => env.DB.prepare(`INSERT INTO postback_log (query,ip,status) VALUES (?,?,?)`).bind(url.search, ip, status).run();
 
+  // 1. TEST BYPASS
   if (url.search.includes('test') || url.search.includes('debug=1') || url.search.includes('test_user')) {
       await log('test_ping_ok');
       return new Response('ok');
   }
 
+  // 2. MONEYRAIN (JSON POST)
   const contentType = req.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
     const rawBody = await req.text();
@@ -329,6 +332,7 @@ async function postback(req, env){
     return new Response('ok');
   }
 
+  // 3. URL PARAMETER NETWORKS
   let q = Object.fromEntries(url.searchParams);
   if (req.method === 'POST') {
       const formData = await req.formData().catch(()=>null);
@@ -351,33 +355,43 @@ async function postback(req, env){
   
   if(!telegramId){ await log('ignored_no_user'); return new Response('ok'); }
 
-  let amount = 0;
-  const parsedPayout = parseFloat(payout);
-  if (q.estimated_price !== undefined || (q.payout !== undefined && parsedPayout < 5)) { 
-      amount = parseFloat((parsedPayout * 900).toFixed(4)); 
-  } else {
-      amount = parseFloat(parsedPayout.toFixed(4)); 
+  // MONETAG SPECIFIC LOGIC
+  if (q.estimated_price !== undefined) {
+      if (q.reward_event_type !== 'valued') { await log('monetag_non_valued_ignored'); return new Response('ok'); }
+      if (!q.ymid || q.ymid === '') { await log('monetag_missing_ymid'); return new Response('bad', {status:400}); } // We now require ymid
+      
+      const amount = parseFloat((parseFloat(q.estimated_price) * 1100).toFixed(4)); // 1100 Rate
+      
+      const seen = await env.DB.prepare(`SELECT 1 FROM clicks WHERE txid=?`).bind(q.ymid).first();
+      if (seen) { await log('monetag_dup'); return new Response('ok'); }
+
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(amount, amount, telegramId),
+        env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(telegramId, amount, 'offer_monetag', q.ymid, 'Monetag'),
+        env.DB.prepare(`INSERT INTO clicks (sub_id, telegram_id, offer_id, payout_ngn, status, txid, network) VALUES (?,?,?,?,?,?,?)`).bind(q.ymid, telegramId, 'Monetag', amount, 'credited', q.ymid, 'Monetag')
+      ]);
+      await checkReferralActivation(env, telegramId);
+      await log('monetag_credited');
+      return new Response('ok');
   }
 
-  // Identify Network for the log
+  // OTHER NETWORKS (Adslab, Offerwallapi, PubCrypto)
   let networkName = 'Unknown';
   if (q.uid) networkName = 'Adslab';
   else if (q.subId && q.reward_pb !== undefined) networkName = 'PubCrypto';
   else if (q.subId && q.reward !== undefined) networkName = 'Offerwallapi';
-  else if (q.userid) networkName = 'BitOffers';
 
-  if (amount > 0) {
-      try {
-          await env.DB.batch([
-            env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(amount, amount, telegramId),
-            env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(telegramId, amount, 'offer_credit', txid, networkName),
-            env.DB.prepare(`INSERT INTO clicks (sub_id, telegram_id, offer_id, payout_ngn, status, txid, network) VALUES (?,?,?,?,?,?,?) ON CONFLICT(sub_id) DO UPDATE SET status='credited', network=excluded.network`).bind(txid, telegramId, networkName, amount, 'credited', txid, networkName)
-          ]);
-          await checkReferralActivation(env, telegramId);
-          await log(`credited_${networkName}`);
-      } catch(e) {
-          await log('db_error');
-      }
-  }
+  const amount = parseFloat(parseFloat(payout).toFixed(4));
+  
+  try {
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(amount, amount, telegramId),
+        env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(telegramId, amount, 'offer_credit', txid, networkName),
+        env.DB.prepare(`INSERT INTO clicks (sub_id, telegram_id, offer_id, payout_ngn, status, txid, network) VALUES (?,?,?,?,?,?,?) ON CONFLICT(sub_id) DO UPDATE SET status='credited', network=excluded.network`).bind(txid, telegramId, networkName, amount, 'credited', txid, networkName)
+      ]);
+      await checkReferralActivation(env, telegramId);
+      await log(`credited_${networkName}`);
+  } catch(e) { await log('db_error'); }
+  
   return new Response('ok');
 }
