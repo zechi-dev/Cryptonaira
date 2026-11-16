@@ -125,14 +125,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
     <div class="meta" style="margin-bottom:12px;">Watch a short video to earn</div>
     <button class="btn" onclick="watchMonetagAd()">Watch Ad Now</button>
   </div>
-  
-  <div class="card">
-    <b>MoneyRain Tasks</b>
-    <div class="meta" style="margin-bottom:12px;">PTC, Autosurf, YouTube & more</div>
-    <div id="moneyrain-container" style="display:flex; justify-content:center;">
-        <div class="meta">Loading widget...</div>
-    </div>
-  </div>
 
   <div class="card">
     <b>Adslab Tasks</b>
@@ -151,10 +143,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <div class="card">
     <b>PubCrypto Tasks</b>
     <div class="meta" style="margin-bottom:12px;">Premium secure offerwall</div>
-    <div id="pubcrypto-container">
-        <div class="meta">Tap to load secure tasks...</div>
-    </div>
-    <button class="btn ghost" onclick="loadPubCrypto()" style="margin-top:10px;">Load PubCrypto Tasks</button>
+    <button class="btn" onclick="openLink('pubcrypto')">Open Tasks</button>
   </div>
 
 </section>
@@ -319,7 +308,7 @@ function render() {
 }
 
 // ==========================================
-// MONETAG (Rewarded Popup with ymid)
+// MONETAG (Corrected: ymid only, no 'pop')
 // ==========================================
 async function watchMonetagAd() {
   const uid = (me && me.uid) ? me.uid : UID;
@@ -333,7 +322,8 @@ async function watchMonetagAd() {
 
   toast('Loading Ad...');
 
-  show_12253468('pop', { ymid: ymid }).then(() => {
+  // Documentation says: show_XXX({ ymid })
+  show_12253468({ ymid: ymid }).then(() => {
       toast('Ad finished! Crediting...');
       setTimeout(async () => { await refresh(); }, 3000);
   }).catch(e => {
@@ -342,34 +332,19 @@ async function watchMonetagAd() {
 }
 
 // ==========================================
-// IFRAMES (MoneyRain, Offerwallapi, PubCrypto)
+// IFRAMES (Offerwallapi only)
 // ==========================================
 let iframesLoaded = false;
 function loadIframes() {
     if (!me || !me.uid || me.uid === '0' || iframesLoaded) return;
-    
-    $('moneyrain-container').innerHTML = `<iframe src="https://offerwall.moneyrain.top/embed.php?pub=2431&uid=${me.uid}" width="360" height="360" style="border:0;border-radius:8px;overflow:hidden" loading="lazy"></iframe>`;
     
     $('offerwallapi-container').innerHTML = `<iframe src="https://offerwallapi.com/offerwall/07fd34e039b11023a1a08754c78bf480/${me.uid}" style="width:100%;height:700px;border:0;" scrolling="auto"></iframe>`;
     
     iframesLoaded = true;
 }
 
-async function loadPubCrypto() {
-    if (!me || !me.uid) return toast('Please wait for your ID to load');
-    $('pubcrypto-container').innerHTML = `<div class="meta">Requesting secure URL...</div>`;
-    const r = await call('/api/pubcrypto-url', {});
-    if (r.error || !r.url) {
-        $('pubcrypto-container').innerHTML = `<div class="meta" style="color:var(--red)">Could not load PubCrypto. Please try again.</div>`;
-        return;
-    }
-    $('pubcrypto-container').innerHTML = `
-      <iframe data-pubcrypto-offerwall src="${r.url}" title="Offerwall" width="100%" height="800" frameborder="0" style="display:block;width:100%;max-width:100%;border:0" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>
-    `;
-}
-
 // ==========================================
-// EXTERNAL LINKS (Adslab)
+// EXTERNAL LINKS (Adslab, PubCrypto)
 // ==========================================
 async function openLink(type) {
   const uid = (me && me.uid) ? me.uid : UID;
@@ -377,6 +352,12 @@ async function openLink(type) {
   
   let url = '';
   if (type === 'adslab') url = `https://adslab.me/task-EkPzIkTBkGcc/${uid}`;
+  if (type === 'pubcrypto') {
+      toast('Generating secure link...');
+      const r = await call('/api/pubcrypto-url', {});
+      if (r.error || !r.url) return toast('Could not generate PubCrypto link');
+      url = r.url;
+  }
   
   if (tg && tg.openLink) {
       tg.openLink(url, { try_instant_view: false });
