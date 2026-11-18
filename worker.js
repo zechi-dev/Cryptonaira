@@ -331,6 +331,42 @@ async function postback(req, env){
     if (formData) { for (const [key, value] of formData.entries()) q[key] = value; }
   }
 
+  // ===== GIGAPUB (server postback) =====
+  if (q.network === 'giga') {
+    const gsecret = env.GIGA_SECRET_POSTBACK;
+    if (!gsecret || q.secret !== gsecret) { await log('giga_bad_secret'); return new Response('forbidden', {status:403}); }
+
+    const rewardId = String(q.rewardId || '').trim();
+    if (!rewardId) { await log('giga_missing_rewardid'); return new Response('bad', {status:400}); }
+
+    if (!/^\d+$/.test(String(q.userId || ''))) { await log('giga_bad_userid'); return new Response('ok'); }
+    const telegramId = parseInt(q.userId, 10);
+
+    const amt = parseFloat(q.amount);
+    if (!Number.isFinite(amt) || amt <= 0) { await log('giga_bad_amount'); return new Response('ok'); }
+    const amount = parseFloat(amt.toFixed(4)); // Giga amount is already in Naira (1 USD = 900 set in Giga)
+
+    const user = await env.DB.prepare(`SELECT 1 FROM users WHERE telegram_id=?`).bind(telegramId).first();
+    if (!user) { await log('giga_no_user'); return new Response('ok'); }
+
+    const key = 'giga_' + rewardId;
+    const seen = await env.DB.prepare(`SELECT 1 FROM clicks WHERE sub_id=? OR txid=?`).bind(key, key).first();
+    if (seen) { await log('giga_dup'); return new Response('ok'); }
+
+    try {
+      // clicks insert first: a repeated reward throws and the whole batch rolls back
+      await env.DB.batch([
+        env.DB.prepare(`INSERT INTO clicks (sub_id, telegram_id, offer_id, payout_ngn, status, txid, network) VALUES (?,?,?,?,?,?,?)`).bind(key, telegramId, 'Giga', amount, 'credited', key, 'Giga'),
+        env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(amount, amount, telegramId),
+        env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(telegramId, amount, 'offer_giga', key, 'Giga')
+      ]);
+    } catch (e) { await log('giga_db_error_or_dup'); return new Response('ok'); }
+
+    await checkReferralActivation(env, telegramId);
+    await log('giga_credited');
+    return new Response('ok');
+  }
+
   // ===== MONETAG =====
   if (q.estimated_price !== undefined) {
     const secret = env.MONETAG_SECRET || 'MonetagSecret123';
