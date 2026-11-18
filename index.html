@@ -413,7 +413,9 @@ function watchGigaAd() {
     quietCredit = true;
     try { await refresh(); } finally { quietCredit = false; }
   }).catch(e => {
-    toast('Ad was skipped or failed to load.');
+    console.error('showGiga error:', e);
+    const why = String((e && (e.message || e.reason || e.error)) || e || 'no reason given').slice(0, 70);
+    toast('Giga ad failed: ' + why);
   }).finally(() => {
     gigaAdBusy = false; if (btn) btn.disabled = false;
   });
