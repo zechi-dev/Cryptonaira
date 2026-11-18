@@ -133,6 +133,12 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   </div>
 
   <div class="card">
+    <b>Giga Tasks</b>
+    <div class="meta" style="margin-bottom:12px;">Complete tasks and earn naira</div>
+    <button class="btn" id="gigaBtn" onclick="openGiga()">Open Tasks</button>
+  </div>
+
+  <div class="card">
     <b>Adslab Tasks</b>
     <div class="meta" style="margin-bottom:12px;">High-paying offers</div>
     <button class="btn" onclick="openLink('adslab')">Open Tasks</button>
@@ -371,6 +377,56 @@ function monetagClickToEarn() {
       // short cooldown so rapid taps can't spam the ad network
       setTimeout(() => { popBusy = false; if (btn) btn.disabled = false; }, 4000);
   });
+}
+
+// ==========================================
+// GIGAPUB OFFERWALL (SDK)
+// Crediting is done by the server postback, so the app never credits here.
+// ==========================================
+
+// 1. Load SDK
+document.addEventListener('DOMContentLoaded', function() {
+  if (!window.loadOfferWallSDK) {
+    const script = document.createElement('script');
+    script.src = 'https://wall.giga.pub/api/v1/loader.js?projectId=9193';
+    script.async = true;
+    document.head.appendChild(script);
+  }
+});
+
+// 2. Initialize
+(window.loadGigaSDKCallbacks || (window.loadGigaSDKCallbacks = [])).push(
+  () => {
+    window.loadOfferWallSDK({
+      projectId: '9193'
+    })
+      .then(sdk => {
+        window.gigaOfferWallSDK = sdk;
+        sdk.on('rewardClaim', async (data) => {
+          console.log('Reward claim received:', data);
+          // No creditUserReward here: the postback credits the balance on the server.
+          try { await sdk.confirmReward(data.rewardId, data.hash); } catch (e) { console.error(e); }
+          toast('Reward received! Crediting...');
+          setTimeout(() => { refresh(); }, 3000);
+          setTimeout(() => { refresh(); }, 10000);
+        });
+        sdk.on('closed', () => { refresh(); });
+      })
+      .catch(error => {
+        console.error('Error loading SDK:', error);
+      });
+  }
+);
+
+// 3. Open (button inside the Giga Tasks card)
+function openGiga() {
+  const uid = (me && me.uid) ? me.uid : UID;
+  if (!uid || uid === '0') return toast('Please wait for your ID to load');
+  if (window.gigaOfferWallSDK) {
+    window.gigaOfferWallSDK.open();
+  } else {
+    toast('Giga is loading. Try again in a moment.');
+  }
 }
 
 // ==========================================
