@@ -10,6 +10,8 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <!-- MONETAG SDK -->
 <script src='//libtl.com/sdk.js' data-zone='12253468' data-sdk='show_12253468'></script>
+<!-- GIGA REWARDED ADS -->
+<script src="https://ad.gigapub.tech/script?id=9193"></script>
 
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif&display=swap">
 <style>
@@ -133,6 +135,13 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   </div>
 
   <div class="card">
+    <b>Giga Ads</b>
+    <div class="meta" style="margin-bottom:12px;">Watch a short ad to earn &#8358;3 (up to 10 ads a day)</div>
+    <button class="btn" id="gigaAdBtn" onclick="watchGigaAd()">Watch Ad</button>
+  </div>
+
+  <!-- Giga offerwall: hidden until Giga approves it. Change display:none to display:block to show it. -->
+  <div class="card" id="gigaWallCard" style="display:none">
     <b>Giga Tasks</b>
     <div class="meta" style="margin-bottom:12px;">Complete tasks and earn naira</div>
     <button class="btn" id="gigaBtn" onclick="openGiga()">Open Tasks</button>
@@ -380,9 +389,41 @@ function monetagClickToEarn() {
 }
 
 // ==========================================
+// GIGA REWARDED VIDEO (showGiga)
+// The ad code cannot send a postback, so the worker pays a fixed
+// reward with a cooldown and a daily cap (see /api/giga-ad).
+// ==========================================
+let gigaAdBusy = false;
+function watchGigaAd() {
+  const uid = (me && me.uid) ? me.uid : UID;
+  if (!uid || uid === '0') return toast('Please wait for your ID to load');
+  if (gigaAdBusy) return;
+  if (typeof window.showGiga !== 'function') return toast('Ads are loading. Please wait.');
+
+  gigaAdBusy = true;
+  const btn = $('gigaAdBtn'); if (btn) btn.disabled = true;
+  toast('Loading ad...');
+
+  window.showGiga().then(async () => {
+    const r = await call('/api/giga-ad', {});
+    if (r.ok) toast('Ad finished! +' + N(r.amount));
+    else if (r.error === 'limit') toast('Daily ad limit reached. Come back tomorrow');
+    else if (r.error === 'cooldown') toast('Please wait a minute before the next ad');
+    else toast('Could not credit the reward');
+    quietCredit = true;
+    try { await refresh(); } finally { quietCredit = false; }
+  }).catch(e => {
+    toast('Ad was skipped or failed to load.');
+  }).finally(() => {
+    gigaAdBusy = false; if (btn) btn.disabled = false;
+  });
+}
+
+// ==========================================
 // GIGAPUB OFFERWALL (SDK)
 // Crediting is done by the server postback, so the app never credits here.
 // ==========================================
+let gigaErr = '', gigaBusy = false;
 
 // 1. Load SDK
 document.addEventListener('DOMContentLoaded', function() {
@@ -390,33 +431,37 @@ document.addEventListener('DOMContentLoaded', function() {
     const script = document.createElement('script');
     script.src = 'https://wall.giga.pub/api/v1/loader.js?projectId=9193';
     script.async = true;
+    script.onerror = () => { gigaErr = 'could not load wall.giga.pub'; };
     document.head.appendChild(script);
   }
 });
 
 // 2. Initialize
-(window.loadGigaSDKCallbacks || (window.loadGigaSDKCallbacks = [])).push(
-  () => {
-    window.loadOfferWallSDK({
-      projectId: '9193'
-    })
-      .then(sdk => {
-        window.gigaOfferWallSDK = sdk;
-        sdk.on('rewardClaim', async (data) => {
-          console.log('Reward claim received:', data);
-          // No creditUserReward here: the postback credits the balance on the server.
-          try { await sdk.confirmReward(data.rewardId, data.hash); } catch (e) { console.error(e); }
-          toast('Reward received! Crediting...');
-          setTimeout(() => { refresh(); }, 3000);
-          setTimeout(() => { refresh(); }, 10000);
-        });
-        sdk.on('closed', () => { refresh(); });
-      })
-      .catch(error => {
-        console.error('Error loading SDK:', error);
+function initGigaSDK() {
+  if (gigaBusy || window.gigaOfferWallSDK || !window.loadOfferWallSDK) return;
+  gigaBusy = true; gigaErr = '';
+  window.loadOfferWallSDK({
+    projectId: '9193'
+  })
+    .then(sdk => {
+      window.gigaOfferWallSDK = sdk;
+      sdk.on('rewardClaim', async (data) => {
+        console.log('Reward claim received:', data);
+        // No creditUserReward here: the postback credits the balance on the server.
+        try { await sdk.confirmReward(data.rewardId, data.hash); } catch (e) { console.error(e); }
+        toast('Reward received! Crediting...');
+        setTimeout(() => { refresh(); }, 3000);
+        setTimeout(() => { refresh(); }, 10000);
       });
-  }
-);
+      sdk.on('closed', () => { refresh(); });
+    })
+    .catch(error => {
+      console.error('Error loading SDK:', error);
+      gigaErr = String((error && error.message) || error || 'unknown error').slice(0, 80);
+    })
+    .finally(() => { gigaBusy = false; });
+}
+(window.loadGigaSDKCallbacks || (window.loadGigaSDKCallbacks = [])).push(initGigaSDK);
 
 // 3. Open (button inside the Giga Tasks card)
 function openGiga() {
@@ -424,9 +469,11 @@ function openGiga() {
   if (!uid || uid === '0') return toast('Please wait for your ID to load');
   if (window.gigaOfferWallSDK) {
     window.gigaOfferWallSDK.open();
-  } else {
-    toast('Giga is loading. Try again in a moment.');
+    return;
   }
+  // SDK not ready: retry the start-up and tell the user what is wrong
+  if (window.loadOfferWallSDK) initGigaSDK();
+  toast(gigaErr ? 'Giga error: ' + gigaErr : 'Giga is loading. Try again in a moment.');
 }
 
 // ==========================================
