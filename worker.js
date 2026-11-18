@@ -44,6 +44,11 @@ async function authAdmin(req, env){
 }
 
 const DAY = 86400000;
+
+// Giga rewarded-video settings (change these any time)
+const GIGA_AD_REWARD = 3;      // naira per ad
+const GIGA_AD_DAILY_CAP = 10;  // max ads paid per user per UTC day
+const GIGA_AD_COOLDOWN = 60;   // seconds between paid ads
 const todayUtc = () => new Date().toISOString().slice(0,10);
 const yestUtc = () => new Date(Date.now()-DAY).toISOString().slice(0,10);
 
@@ -85,6 +90,7 @@ export default {
       if(url.pathname === '/api/messages') return await userMessages(req, env, cors);
       if(url.pathname === '/api/messages/read' && req.method === 'POST') return await userMessagesRead(req, env, cors);
       if(url.pathname === '/api/pubcrypto-url' && req.method === 'POST') return await getPubCryptoUrl(req, env, cors);
+      if(url.pathname === '/api/giga-ad' && req.method === 'POST') return await userGigaAd(req, env, cors);
 
       const admin = await authAdmin(req, env);
       if(url.pathname.startsWith('/admin/') && !admin) return Response.json({error:'auth'}, {status:401, headers:cors});
@@ -113,6 +119,31 @@ async function getPubCryptoUrl(req, env, cors){
         const data = await res.json();
         return Response.json({url: data.iframe_url}, {headers:cors});
     } catch(e) { return Response.json({error:'fetch_failed'}, {status:500, headers:cors}); }
+}
+
+async function userGigaAd(req, env, cors){
+  const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
+  const uid = v.user.id;
+  const u = await env.DB.prepare(`SELECT banned FROM users WHERE telegram_id=?`).bind(uid).first();
+  if(!u) return Response.json({error:'no_user'}, {status:404, headers:cors});
+  if(u.banned) return Response.json({error:'banned'}, {status:403, headers:cors});
+
+  // One atomic insert that only succeeds if the daily cap and cooldown allow it
+  const ins = await env.DB.prepare(
+    `INSERT INTO ledger (owner_id,delta,reason,ref,network)
+     SELECT ?,?,?,?,?
+     WHERE (SELECT COUNT(*) FROM ledger WHERE owner_id=? AND reason='giga_ad' AND created_at >= date('now')) < ?
+       AND NOT EXISTS (SELECT 1 FROM ledger WHERE owner_id=? AND reason='giga_ad' AND created_at > datetime('now', ?))`
+  ).bind(uid, GIGA_AD_REWARD, 'giga_ad', 'gad_'+crypto.randomUUID(), 'Giga Ad', uid, GIGA_AD_DAILY_CAP, uid, '-'+GIGA_AD_COOLDOWN+' seconds').run();
+
+  if(!ins.meta || ins.meta.changes === 0){
+    const c = await env.DB.prepare(`SELECT COUNT(*) c FROM ledger WHERE owner_id=? AND reason='giga_ad' AND created_at >= date('now')`).bind(uid).first();
+    return Response.json({error: (c?.c||0) >= GIGA_AD_DAILY_CAP ? 'limit' : 'cooldown'}, {status:429, headers:cors});
+  }
+
+  await env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(GIGA_AD_REWARD, GIGA_AD_REWARD, uid).run();
+  await checkReferralActivation(env, uid);
+  return Response.json({ok:true, amount: GIGA_AD_REWARD}, {headers:cors});
 }
 
 async function userSync(req, env, cors){
