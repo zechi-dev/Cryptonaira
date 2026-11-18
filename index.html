@@ -10,8 +10,6 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <!-- MONETAG SDK -->
 <script src='//libtl.com/sdk.js' data-zone='12253468' data-sdk='show_12253468'></script>
-<!-- GIGA REWARDED ADS -->
-<script src="https://ad.gigapub.tech/script?id=9193"></script>
 
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif&display=swap">
 <style>
@@ -135,9 +133,9 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   </div>
 
   <div class="card">
-    <b>Giga Ads</b>
-    <div class="meta" style="margin-bottom:12px;">Watch a short ad to earn &#8358;3 (up to 10 ads a day)</div>
-    <button class="btn" id="gigaAdBtn" onclick="watchGigaAd()">Watch Ad</button>
+    <b>Giga Smartlink</b>
+    <div class="meta" style="margin-bottom:12px;">Open the page, stay on it a few seconds, then come back to earn &#8358;3 (up to 10 a day)</div>
+    <button class="btn" id="gigaAdBtn" onclick="openGigaLink()">Open &amp; Earn</button>
   </div>
 
   <!-- Giga offerwall: hidden until Giga approves it. Change display:none to display:block to show it. -->
@@ -389,36 +387,39 @@ function monetagClickToEarn() {
 }
 
 // ==========================================
-// GIGA REWARDED VIDEO (showGiga)
-// The ad code cannot send a postback, so the worker pays a fixed
-// reward with a cooldown and a daily cap (see /api/giga-ad).
+// GIGA SMARTLINK (click to earn)
+// The smartlink carries no user ID, so it cannot send a postback.
+// The worker pays a fixed reward with a cooldown and a daily cap (/api/giga-ad)
+// once the user comes back to the app after staying away a few seconds.
 // ==========================================
-let gigaAdBusy = false;
-function watchGigaAd() {
+const GIGA_LINK = 'https://link.gigapub.tech/l/83uuatlwx';
+const GIGA_MIN_AWAY_MS = 8000;
+let gigaOpenedAt = 0, gigaPaying = false;
+
+function openGigaLink() {
   const uid = (me && me.uid) ? me.uid : UID;
-  if (!uid || uid === '0') return toast('Please wait for your ID to load');
-  if (gigaAdBusy) return;
-  if (typeof window.showGiga !== 'function') return toast('Ads are loading. Please wait.');
+  if (!uid || uid === '0') return toast('Telegram ID not found. Please restart the app.');
+  gigaOpenedAt = Date.now();
+  toast('Stay on the page a few seconds, then come back.');
+  if (tg && tg.openLink) { tg.openLink(GIGA_LINK, { try_instant_view: false }); }
+  else { window.open(GIGA_LINK, '_blank'); }
+}
 
-  gigaAdBusy = true;
-  const btn = $('gigaAdBtn'); if (btn) btn.disabled = true;
-  toast('Loading ad...');
-
-  window.showGiga().then(async () => {
+async function gigaLinkReturn() {
+  if (!gigaOpenedAt || gigaPaying) return;
+  const away = Date.now() - gigaOpenedAt;
+  gigaOpenedAt = 0;
+  if (away < GIGA_MIN_AWAY_MS) return toast('Stay on the page a few seconds to earn.');
+  gigaPaying = true;
+  try {
     const r = await call('/api/giga-ad', {});
-    if (r.ok) toast('Ad finished! +' + N(r.amount));
-    else if (r.error === 'limit') toast('Daily ad limit reached. Come back tomorrow');
-    else if (r.error === 'cooldown') toast('Please wait a minute before the next ad');
+    if (r.ok) toast('Done! +' + N(r.amount));
+    else if (r.error === 'limit') toast('Daily limit reached. Come back tomorrow');
+    else if (r.error === 'cooldown') toast('Please wait a minute before the next one');
     else toast('Could not credit the reward');
     quietCredit = true;
     try { await refresh(); } finally { quietCredit = false; }
-  }).catch(e => {
-    console.error('showGiga error:', e);
-    const why = String((e && (e.message || e.reason || e.error)) || e || 'no reason given').slice(0, 70);
-    toast('Giga ad failed: ' + why);
-  }).finally(() => {
-    gigaAdBusy = false; if (btn) btn.disabled = false;
-  });
+  } finally { gigaPaying = false; }
 }
 
 // ==========================================
@@ -599,9 +600,10 @@ document.addEventListener('click', e => {
 
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-        refresh();
+        if (gigaOpenedAt) gigaLinkReturn(); else refresh();
     }
 });
+window.addEventListener('focus', () => { if (gigaOpenedAt) gigaLinkReturn(); });
 
 (async function boot() {
   const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user; 
