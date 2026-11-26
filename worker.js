@@ -44,33 +44,79 @@ async function authAdmin(req, env){
 }
 
 const DAY = 86400000;
-
-// Giga rewarded-video settings (change these any time)
-const GIGA_AD_REWARD = 3;      // naira per ad
-const GIGA_AD_DAILY_CAP = 10;  // max ads paid per user per UTC day
-const GIGA_AD_COOLDOWN = 60;   // seconds between paid ads
 const todayUtc = () => new Date().toISOString().slice(0,10);
 const yestUtc = () => new Date(Date.now()-DAY).toISOString().slice(0,10);
+const isoNow = () => new Date().toISOString().replace('T',' ').slice(0,19);
+const isoPlus = (hours) => new Date(Date.now() + hours*3600*1000).toISOString().replace('T',' ').slice(0,19);
 
-async function creditOneTime(env, referrerId, refereeId){
-  const ref = await env.DB.prepare(`SELECT * FROM referrals WHERE referrer_id=? AND referee_id=? AND activated=0`).bind(referrerId, refereeId).first();
-  if(!ref) return;
-  const u = await env.DB.prepare(`SELECT earned_total FROM users WHERE telegram_id=?`).bind(refereeId).first();
-  if(!u || u.earned_total < 650) return; 
-  const referrer = await env.DB.prepare(`SELECT 1 FROM users WHERE telegram_id=?`).bind(referrerId).first();
-  if(!referrer) return;
-  await env.DB.batch([
-    env.DB.prepare(`UPDATE referrals SET activated=1, activated_at=datetime('now') WHERE referrer_id=? AND referee_id=?`).bind(referrerId, refereeId),
-    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(referrerId, 100.0, 'referral_100', String(refereeId), 'Referral'),
-    env.DB.prepare(`UPDATE users SET balance=balance+100.0, earned_total=earned_total+100.0 WHERE telegram_id=?`).bind(referrerId)
-  ]);
-}
+// ============ CHANNEL JOIN CONFIG ============
+// Edit here if you later add a second channel.
+const CHANNELS = {
+  main: { chat: '@Cryptonairaofficialchannel', reward: 10, label: 'CryptoNaira Channel' }
+  // second: { chat: '@your_second_channel', reward: 10, label: 'Second Channel' }
+};
 
+// ============ REFERRAL ============
+// Referral bonus is 100 naira, gated on referee's earned_total >= 650.
+// Under the dual-balance model: bonus shows as PENDING from signup,
+// becomes AVAILABLE when the referee's earned_total crosses 650.
 async function checkReferralActivation(env, refereeId){
   const u = await env.DB.prepare(`SELECT earned_total FROM users WHERE telegram_id=?`).bind(refereeId).first();
-  if(!u || u.earned_total < 650) return; 
+  if(!u || u.earned_total < 650) return;
   const refs = await env.DB.prepare(`SELECT referrer_id FROM referrals WHERE referee_id=? AND activated=0`).bind(refereeId).all();
-  for(const r of refs.results){ await creditOneTime(env, r.referrer_id, refereeId); }
+  for(const r of refs.results){
+    const refKey = 'ref_' + refereeId;
+    const existing = await env.DB.prepare(
+      `SELECT id FROM pending_credits WHERE owner_id=? AND reason='referral_bonus' AND ref=? AND released_at IS NULL`
+    ).bind(r.referrer_id, refKey).first();
+    const stmts = [
+      env.DB.prepare(`UPDATE referrals SET activated=1, activated_at=datetime('now') WHERE referrer_id=? AND referee_id=?`).bind(r.referrer_id, refereeId)
+    ];
+    if(existing){
+      stmts.push(env.DB.prepare(`UPDATE pending_credits SET release_at=datetime('now') WHERE id=?`).bind(existing.id));
+    } else {
+      stmts.push(env.DB.prepare(`INSERT INTO pending_credits (owner_id, amount, reason, ref, release_at) VALUES (?,?,?,?,datetime('now'))`).bind(r.referrer_id, 100.0, 'referral_bonus', refKey));
+      stmts.push(env.DB.prepare(`UPDATE users SET earned_total=earned_total+100 WHERE telegram_id=?`).bind(r.referrer_id));
+    }
+    await env.DB.batch(stmts);
+  }
+}
+
+// ============ PENDING RELEASE (compute-on-read) ============
+async function releaseDuePending(env, uid){
+  const due = await env.DB.prepare(
+    `SELECT id, amount FROM pending_credits
+     WHERE owner_id=? AND released_at IS NULL
+     AND release_at IS NOT NULL AND release_at <= datetime('now')`
+  ).bind(uid).all();
+  if(!due.results.length) return;
+  const totalRelease = due.results.reduce((a, r) => a + r.amount, 0);
+  const stmts = [
+    env.DB.prepare(`UPDATE users SET balance = balance + ? WHERE telegram_id=?`).bind(totalRelease, uid)
+  ];
+  for(const row of due.results){
+    stmts.push(env.DB.prepare(`UPDATE pending_credits SET released_at = datetime('now') WHERE id=?`).bind(row.id));
+  }
+  await env.DB.batch(stmts);
+}
+
+// Backfill pending_credits rows for pre-existing unactivated referrals
+// (so old referrals also show as pending ₦100 from the moment the referrer opens the app).
+async function backfillReferralPending(env, uid){
+  const missing = await env.DB.prepare(
+    `SELECT r.referee_id FROM referrals r
+     WHERE r.referrer_id=? AND r.activated=0
+     AND NOT EXISTS (
+       SELECT 1 FROM pending_credits pc
+       WHERE pc.owner_id=r.referrer_id AND pc.reason='referral_bonus' AND pc.ref='ref_'||r.referee_id
+     )`
+  ).bind(uid).all();
+  for(const r of missing.results){
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO pending_credits (owner_id, amount, reason, ref, release_at) VALUES (?,?,?,?,NULL)`).bind(uid, 100.0, 'referral_bonus', 'ref_'+r.referee_id),
+      env.DB.prepare(`UPDATE users SET earned_total=earned_total+100 WHERE telegram_id=?`).bind(uid)
+    ]);
+  }
 }
 
 export default {
@@ -79,7 +125,6 @@ export default {
     const cors = { 'Access-Control-Allow-Origin': env.APP_ORIGIN || '*', 'Access-Control-Allow-Headers': 'Authorization,Content-Type,X-Admin-Token', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS' };
     if(req.method === 'OPTIONS') return new Response(null, {headers:cors});
     try {
-      // Accepts both /postback and /api/postback
       if(url.pathname === '/postback' || url.pathname === '/api/postback') return await postback(req, env);
       if(url.pathname === '/admin/login' && req.method === 'POST') return await adminLogin(req, env, cors);
       if(url.pathname === '/api/sync' && req.method === 'POST') return await userSync(req, env, cors);
@@ -89,8 +134,8 @@ export default {
       if(url.pathname === '/api/withdraw' && req.method === 'POST') return await userWithdraw(req, env, cors);
       if(url.pathname === '/api/messages') return await userMessages(req, env, cors);
       if(url.pathname === '/api/messages/read' && req.method === 'POST') return await userMessagesRead(req, env, cors);
-      if(url.pathname === '/api/pubcrypto-url' && req.method === 'POST') return await getPubCryptoUrl(req, env, cors);
-      if(url.pathname === '/api/giga-ad' && req.method === 'POST') return await userGigaAd(req, env, cors);
+      if(url.pathname === '/api/barzha/credit' && req.method === 'POST') return await barzhaCredit(req, env, cors);
+      if(url.pathname === '/api/join-channel' && req.method === 'POST') return await joinChannel(req, env, cors);
 
       const admin = await authAdmin(req, env);
       if(url.pathname.startsWith('/admin/') && !admin) return Response.json({error:'auth'}, {status:401, headers:cors});
@@ -108,44 +153,104 @@ export default {
   }
 };
 
-async function getPubCryptoUrl(req, env, cors){
-    const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
-    try {
-        const res = await fetch('https://pub.cryptolinkforearn.com/api/publisher/embed-tokens', {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + env.CRYPTOLINK_API_KEY, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ site_key: 'site_f7392231dfc7fc58f92845736d22102808e9b817', sub_id: String(v.user.id), origin: 'https://cryptonaira.pages.dev', theme: 'dark' })
-        });
-        const data = await res.json();
-        return Response.json({url: data.iframe_url}, {headers:cors});
-    } catch(e) { return Response.json({error:'fetch_failed'}, {status:500, headers:cors}); }
-}
-
-async function userGigaAd(req, env, cors){
+// ============ BARZHA ============
+// Called from frontend when user taps a Barzha task (PPC ad or subscription).
+// PPC: no campaign id, every click credits.
+// Subscription: requires campaign_id, dedup by (uid, campaign_id) via clicks table.
+async function barzhaCredit(req, env, cors){
   const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
   const uid = v.user.id;
+  const body = await req.json().catch(()=>({}));
+  const type = body.type;
+  const campaignId = body.campaign_id;
+
+  if(!['ppc','sub'].includes(type)) return Response.json({error:'invalid_type'}, {status:400, headers:cors});
+  if(type === 'sub' && !campaignId) return Response.json({error:'missing_campaign'}, {status:400, headers:cors});
+
   const u = await env.DB.prepare(`SELECT banned FROM users WHERE telegram_id=?`).bind(uid).first();
   if(!u) return Response.json({error:'no_user'}, {status:404, headers:cors});
   if(u.banned) return Response.json({error:'banned'}, {status:403, headers:cors});
 
-  // One atomic insert that only succeeds if the daily cap and cooldown allow it
-  const ins = await env.DB.prepare(
-    `INSERT INTO ledger (owner_id,delta,reason,ref,network)
-     SELECT ?,?,?,?,?
-     WHERE (SELECT COUNT(*) FROM ledger WHERE owner_id=? AND reason='giga_ad' AND created_at >= date('now')) < ?
-       AND NOT EXISTS (SELECT 1 FROM ledger WHERE owner_id=? AND reason='giga_ad' AND created_at > datetime('now', ?))`
-  ).bind(uid, GIGA_AD_REWARD, 'giga_ad', 'gad_'+crypto.randomUUID(), 'Giga Ad', uid, GIGA_AD_DAILY_CAP, uid, '-'+GIGA_AD_COOLDOWN+' seconds').run();
+  const offerId = type === 'ppc' ? 'barzha_ppc' : 'barzha_sub_'+campaignId;
 
-  if(!ins.meta || ins.meta.changes === 0){
-    const c = await env.DB.prepare(`SELECT COUNT(*) c FROM ledger WHERE owner_id=? AND reason='giga_ad' AND created_at >= date('now')`).bind(uid).first();
-    return Response.json({error: (c?.c||0) >= GIGA_AD_DAILY_CAP ? 'limit' : 'cooldown'}, {status:429, headers:cors});
+  if(type === 'sub'){
+    const existing = await env.DB.prepare(`SELECT 1 FROM clicks WHERE telegram_id=? AND offer_id=?`).bind(uid, offerId).first();
+    if(existing) return Response.json({error:'already'}, {status:409, headers:cors});
   }
 
-  await env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(GIGA_AD_REWARD, GIGA_AD_REWARD, uid).run();
+  const total     = type === 'ppc' ? 8  : 15;
+  const instant   = type === 'ppc' ? 4  : 10;
+  const pendingAmt = type === 'ppc' ? 4 : 5;
+  const ref       = type === 'ppc' ? 'barzha_ppc_'+crypto.randomUUID() : 'barzha_sub_'+campaignId;
+  const networkName = 'Barzha ' + (type === 'ppc' ? 'PPC' : 'Subscription');
+  const releaseAt = isoPlus(24);
+
+  try {
+    const stmts = [
+      env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(instant, total, uid),
+      env.DB.prepare(`INSERT INTO pending_credits (owner_id, amount, reason, ref, release_at) VALUES (?,?,?,?,?)`).bind(uid, pendingAmt, 'barzha_'+type+'_half', ref, releaseAt),
+      env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(uid, total, 'offer_barzha_'+type, ref, networkName)
+    ];
+    if(type === 'sub'){
+      stmts.push(env.DB.prepare(`INSERT INTO clicks (sub_id, telegram_id, offer_id, payout_ngn, status, txid, network) VALUES (?,?,?,?,?,?,?)`).bind(ref, uid, offerId, total, 'credited', ref, networkName));
+    }
+    await env.DB.batch(stmts);
+  } catch(e){
+    return Response.json({error:'db_error', detail:String(e)}, {status:500, headers:cors});
+  }
+
   await checkReferralActivation(env, uid);
-  return Response.json({ok:true, amount: GIGA_AD_REWARD}, {headers:cors});
+  return Response.json({ok:true, amount: total, instant, pending: pendingAmt}, {headers:cors});
 }
 
+// ============ CHANNEL JOIN ============
+// Verifies the user is actually in the channel before crediting.
+async function joinChannel(req, env, cors){
+  const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
+  const uid = v.user.id;
+  const body = await req.json().catch(()=>({}));
+  const channelKey = body.channel;
+
+  const ch = CHANNELS[channelKey];
+  if(!ch) return Response.json({error:'invalid_channel'}, {status:400, headers:cors});
+
+  const u = await env.DB.prepare(`SELECT banned FROM users WHERE telegram_id=?`).bind(uid).first();
+  if(!u) return Response.json({error:'no_user'}, {status:404, headers:cors});
+  if(u.banned) return Response.json({error:'banned'}, {status:403, headers:cors});
+
+  const existing = await env.DB.prepare(`SELECT 1 FROM ledger WHERE owner_id=? AND reason='channel_join' AND ref=?`).bind(uid, ch.chat).first();
+  if(existing) return Response.json({error:'already'}, {status:409, headers:cors});
+
+  let tgData;
+  try {
+    const tgRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getChatMember?chat_id=${encodeURIComponent(ch.chat)}&user_id=${uid}`);
+    tgData = await tgRes.json();
+  } catch(e){
+    return Response.json({error:'verify_failed', detail:'network'}, {status:502, headers:cors});
+  }
+
+  if(!tgData.ok){
+    return Response.json({error:'verify_failed', detail: tgData.description||'api_error'}, {status:400, headers:cors});
+  }
+  const status = tgData.result && tgData.result.status;
+  if(!['member','administrator','creator'].includes(status)){
+    return Response.json({error:'not_member'}, {status:400, headers:cors});
+  }
+
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(ch.reward, ch.reward, uid),
+      env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(uid, ch.reward, 'channel_join', ch.chat, 'Channel Join')
+    ]);
+  } catch(e){
+    return Response.json({error:'db_error', detail:String(e)}, {status:500, headers:cors});
+  }
+
+  await checkReferralActivation(env, uid);
+  return Response.json({ok:true, amount: ch.reward}, {headers:cors});
+}
+
+// ============ USER ============
 async function userSync(req, env, cors){
   const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
   const uid = v.user.id;
@@ -159,7 +264,11 @@ async function userSync(req, env, cors){
         const referrer = await env.DB.prepare(`SELECT 1 FROM users WHERE telegram_id=?`).bind(refId).first();
         if(referrer){
           const expiresAt = new Date(Date.now() + 365*DAY).toISOString();
-          await env.DB.prepare(`INSERT INTO referrals (referrer_id,referee_id,expires_at) VALUES (?,?,?)`).bind(refId, uid, expiresAt).run();
+          await env.DB.batch([
+            env.DB.prepare(`INSERT INTO referrals (referrer_id,referee_id,expires_at) VALUES (?,?,?)`).bind(refId, uid, expiresAt),
+            env.DB.prepare(`INSERT INTO pending_credits (owner_id, amount, reason, ref, release_at) VALUES (?,?,?,?,NULL)`).bind(refId, 100.0, 'referral_bonus', 'ref_'+uid),
+            env.DB.prepare(`UPDATE users SET earned_total=earned_total+100 WHERE telegram_id=?`).bind(refId)
+          ]);
         }
       }
     }
@@ -170,17 +279,47 @@ async function userSync(req, env, cors){
 async function userMe(req, env, cors){
   const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
   const uid = v.user.id;
-  const u = await env.DB.prepare(`SELECT * FROM users WHERE telegram_id=?`).bind(uid).first();
+  const u = await env.DB.prepare(`SELECT banned FROM users WHERE telegram_id=?`).bind(uid).first();
   if(u && u.banned) return Response.json({error:'banned'}, {status:403, headers:cors});
-  const [u2, w, refs, hist, unread] = await Promise.all([
+
+  // Compute-on-read: release any pending credits whose hold has expired.
+  await releaseDuePending(env, uid);
+  // Backfill pending rows for existing unactivated referrals.
+  await backfillReferralPending(env, uid);
+
+  const [u2, w, refs, hist, unread, pendingSum] = await Promise.all([
     env.DB.prepare(`SELECT * FROM users WHERE telegram_id=?`).bind(uid).first(),
     env.DB.prepare(`SELECT * FROM wallets WHERE telegram_id=?`).bind(uid).first(),
     env.DB.prepare(`SELECT activated, COUNT(*) c FROM referrals WHERE referrer_id=? GROUP BY activated`).bind(uid).all(),
-    env.DB.prepare(`SELECT delta,reason,network,created_at FROM ledger WHERE owner_id=? ORDER BY id DESC LIMIT 30`).bind(uid).all(),
-    env.DB.prepare(`SELECT COUNT(*) c FROM messages m WHERE NOT EXISTS (SELECT 1 FROM message_reads r WHERE r.message_id=m.id AND r.reader_id=?)`).bind(uid).first()
+    env.DB.prepare(
+      `SELECT l.delta, l.reason, l.network, l.created_at, l.ref,
+        COALESCE((SELECT SUM(pc.amount) FROM pending_credits pc
+                  WHERE pc.owner_id=l.owner_id AND pc.ref=l.ref AND pc.released_at IS NULL), 0) AS pending_amount
+       FROM ledger l WHERE l.owner_id=? ORDER BY l.id DESC LIMIT 30`
+    ).bind(uid).all(),
+    env.DB.prepare(`SELECT COUNT(*) c FROM messages m WHERE NOT EXISTS (SELECT 1 FROM message_reads r WHERE r.message_id=m.id AND r.reader_id=?)`).bind(uid).first(),
+    env.DB.prepare(`SELECT COALESCE(SUM(amount),0) s FROM pending_credits WHERE owner_id=? AND released_at IS NULL`).bind(uid).first()
   ]);
+
   const rc = refs.results.reduce((a,r) => { a[r.activated?'qualified':'pending'] = r.c; return a; }, {});
-  return Response.json({ uid, username: v.user.username||v.user.first_name, balance: u2?.balance ?? 0, earned_total: u2?.earned_total ?? 0, tasks_done: u2?.tasks_done ?? 0, streak: u2?.streak ?? 0, last_checkin: u2?.last_checkin ?? null, wallet: w || null, referrals: rc, history: hist.results, unread: unread?.c || 0 }, {headers:cors});
+  const balance = u2?.balance ?? 0;
+  const pending = pendingSum?.s ?? 0;
+
+  return Response.json({
+    uid,
+    username: v.user.username || v.user.first_name,
+    balance,
+    pending,
+    current: balance + pending,
+    earned_total: u2?.earned_total ?? 0,
+    tasks_done: u2?.tasks_done ?? 0,
+    streak: u2?.streak ?? 0,
+    last_checkin: u2?.last_checkin ?? null,
+    wallet: w || null,
+    referrals: rc,
+    history: hist.results,
+    unread: unread?.c || 0
+  }, {headers:cors});
 }
 
 async function userCheckin(req, env, cors){
@@ -190,15 +329,15 @@ async function userCheckin(req, env, cors){
   if(u?.banned) return Response.json({error:'banned'}, {status:403, headers:cors});
   const day = todayUtc();
   if(u?.last_checkin === day) return Response.json({error:'already'}, {status:409, headers:cors});
-  let streak = (u?.last_checkin === yestUtc()) ? (u.streak||0) : 0; 
+  let streak = (u?.last_checkin === yestUtc()) ? (u.streak||0) : 0;
   streak = streak >= 7 ? 1 : streak + 1;
   const amount = streak === 7 ? 52.0 : 13.0;
   try {
-      await env.DB.batch([
-        env.DB.prepare(`INSERT INTO checkins (telegram_id,day,amount) VALUES (?,?,?)`).bind(uid, day, amount),
-        env.DB.prepare(`UPDATE users SET streak=?,last_checkin=?,balance=balance+?,earned_total=earned_total+? WHERE telegram_id=?`).bind(streak, day, amount, amount, uid),
-        env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(uid, amount, 'checkin', 'chk_'+day, 'Check-in')
-      ]);
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO checkins (telegram_id,day,amount) VALUES (?,?,?)`).bind(uid, day, amount),
+      env.DB.prepare(`UPDATE users SET streak=?,last_checkin=?,balance=balance+?,earned_total=earned_total+? WHERE telegram_id=?`).bind(streak, day, amount, amount, uid),
+      env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(uid, amount, 'checkin', 'chk_'+day, 'Check-in')
+    ]);
   } catch(e) { return Response.json({error:'already'}, {status:409, headers:cors}); }
   await checkReferralActivation(env, uid);
   return Response.json({ok:true, amount, streak}, {headers:cors});
@@ -215,6 +354,8 @@ async function userWallet(req, env, cors){
 async function userWithdraw(req, env, cors){
   const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
   const uid = v.user.id;
+  // Release any due pending first so the balance check sees fresh numbers
+  await releaseDuePending(env, uid);
   const u = await env.DB.prepare(`SELECT balance, banned FROM users WHERE telegram_id=?`).bind(uid).first();
   if(u?.banned) return Response.json({error:'banned'}, {status:403, headers:cors});
   const w = await env.DB.prepare(`SELECT * FROM wallets WHERE telegram_id=?`).bind(uid).first();
@@ -222,8 +363,8 @@ async function userWithdraw(req, env, cors){
   if((u?.balance||0) < 2000) return Response.json({error:'min'}, {status:400, headers:cors});
   const open = await env.DB.prepare(`SELECT id FROM payouts WHERE owner_id=? AND status='requested'`).bind(uid).first();
   if(open) return Response.json({error:'pending'}, {status:409, headers:cors});
-  const amount = u.balance; 
-  const id = crypto.randomUUID(); 
+  const amount = u.balance;
+  const id = crypto.randomUUID();
   const ref = await env.DB.prepare(`SELECT referrer_id FROM referrals WHERE referee_id=? AND activated=1 AND expires_at > datetime('now')`).bind(uid).first();
   const batchResult = await env.DB.batch([
     env.DB.prepare(`UPDATE users SET balance=balance-? WHERE telegram_id=? AND balance>=?`).bind(amount, uid, amount),
@@ -246,6 +387,7 @@ async function userMessagesRead(req, env, cors){
   return Response.json({ok:true}, {headers:cors});
 }
 
+// ============ ADMIN ============
 async function adminLogin(req, env, cors){
   const body = await req.json().catch(()=>({}));
   if(body.password !== env.ADMIN_PASSWORD) return Response.json({error:'auth'}, {status:401, headers:cors});
@@ -255,15 +397,16 @@ async function adminLogin(req, env, cors){
 }
 
 async function adminStats(env, cors){
-  const [users, credited, paid, pending, balances] = await Promise.all([
+  const [users, credited, paid, pending, balances, pendingSum] = await Promise.all([
     env.DB.prepare(`SELECT COUNT(*) c FROM users`).first(),
     env.DB.prepare(`SELECT COALESCE(SUM(earned_total),0) s FROM users`).first(),
     env.DB.prepare(`SELECT COALESCE(SUM(amount_ngn),0) s, COUNT(*) c FROM payouts WHERE status='paid'`).first(),
     env.DB.prepare(`SELECT COALESCE(SUM(amount_ngn),0) s, COUNT(*) c FROM payouts WHERE status='requested'`).first(),
-    env.DB.prepare(`SELECT COALESCE(SUM(balance),0) s FROM users`).first()
+    env.DB.prepare(`SELECT COALESCE(SUM(balance),0) s FROM users`).first(),
+    env.DB.prepare(`SELECT COALESCE(SUM(amount),0) s FROM pending_credits WHERE released_at IS NULL`).first()
   ]);
   const totalCredited = credited?.s || 0; const totalPaid = paid?.s || 0; const pendingPaid = pending?.s || 0; const balanceHeld = balances?.s || 0;
-  return Response.json({ totalUsers: users?.c || 0, totalCredited, totalPaid, totalPaidCount: paid?.c || 0, pendingPayouts: pendingPaid, pendingCount: pending?.c || 0, currentBalance: balanceHeld, platformNet: totalCredited - totalPaid - pendingPaid - balanceHeld }, {headers:cors});
+  return Response.json({ totalUsers: users?.c || 0, totalCredited, totalPaid, totalPaidCount: paid?.c || 0, pendingPayouts: pendingPaid, pendingCount: pending?.c || 0, currentBalance: balanceHeld, pendingCredits: pendingSum?.s || 0, platformNet: totalCredited - totalPaid - pendingPaid - balanceHeld - (pendingSum?.s || 0) }, {headers:cors});
 }
 
 async function adminUsers(req, env, url, cors){
@@ -289,6 +432,7 @@ async function adminDelete(req, env, cors){
     env.DB.prepare(`DELETE FROM wallets WHERE telegram_id=?`).bind(telegram_id),
     env.DB.prepare(`DELETE FROM checkins WHERE telegram_id=?`).bind(telegram_id),
     env.DB.prepare(`DELETE FROM referrals WHERE referrer_id=? OR referee_id=?`).bind(telegram_id, telegram_id),
+    env.DB.prepare(`DELETE FROM pending_credits WHERE owner_id=?`).bind(telegram_id),
     env.DB.prepare(`DELETE FROM users WHERE telegram_id=?`).bind(telegram_id)
   ]);
   return Response.json({ok:true}, {headers:cors});
@@ -331,70 +475,62 @@ async function adminMessageSend(req, env, cors){
   return Response.json({ok:true}, {headers:cors});
 }
 
-/* ============ POSTBACK ============ */
+// ============ POSTBACK ============
 async function postback(req, env){
   const url = new URL(req.url);
   const ip = req.headers.get('CF-Connecting-IP') || '';
 
-  // Log the query WITHOUT the secret
   const safeParams = new URLSearchParams(url.search);
   safeParams.delete('secret');
   const safeQuery = '?' + safeParams.toString();
   const log = status => env.DB.prepare(`INSERT INTO postback_log (query,ip,status) VALUES (?,?,?)`).bind(safeQuery, ip, status).run();
 
-  // 1. TEST PING (matches param names only, not any text in the URL)
   if (url.searchParams.has('test') || url.searchParams.has('test_user') || url.searchParams.get('debug') === '1') {
     await log('test_ping_ok');
     return new Response('ok');
   }
 
-  // 2. JSON postbacks (MoneyRain etc.) are ignored
   const contentType = req.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
     await log('json_postback_ignored');
     return new Response('ok');
   }
 
-  // 3. Merge URL params + POST form data
   const q = Object.fromEntries(url.searchParams);
   if (req.method === 'POST') {
     const formData = await req.formData().catch(() => null);
     if (formData) { for (const [key, value] of formData.entries()) q[key] = value; }
   }
 
-  // ===== GIGAPUB (server postback) =====
-  if (q.network === 'giga') {
-    const gsecret = env.GIGA_SECRET_POSTBACK;
-    if (!gsecret || q.secret !== gsecret) { await log('giga_bad_secret'); return new Response('forbidden', {status:403}); }
+  // ===== MOBPLUS (pending 48h from postback) =====
+  // Detected by presence of `userid` param (Mobplus uses {user_id}, {payout}, {transaction_id}).
+  if (q.userid && q.payout !== undefined && q.txid) {
+    if (!/^\d+$/.test(String(q.userid))) { await log('mobplus_bad_userid'); return new Response('ok'); }
+    const telegramId = parseInt(q.userid, 10);
 
-    const rewardId = String(q.rewardId || '').trim();
-    if (!rewardId) { await log('giga_missing_rewardid'); return new Response('bad', {status:400}); }
-
-    if (!/^\d+$/.test(String(q.userId || ''))) { await log('giga_bad_userid'); return new Response('ok'); }
-    const telegramId = parseInt(q.userId, 10);
-
-    const amt = parseFloat(q.amount);
-    if (!Number.isFinite(amt) || amt <= 0) { await log('giga_bad_amount'); return new Response('ok'); }
-    const amount = parseFloat(amt.toFixed(4)); // Giga amount is already in Naira (1 USD = 900 set in Giga)
+    const amt = parseFloat(q.payout);
+    if (!Number.isFinite(amt) || amt <= 0) { await log('mobplus_bad_amount'); return new Response('ok'); }
+    const amount = parseFloat(amt.toFixed(4));
 
     const user = await env.DB.prepare(`SELECT 1 FROM users WHERE telegram_id=?`).bind(telegramId).first();
-    if (!user) { await log('giga_no_user'); return new Response('ok'); }
+    if (!user) { await log('mobplus_no_user'); return new Response('ok'); }
 
-    const key = 'giga_' + rewardId;
-    const seen = await env.DB.prepare(`SELECT 1 FROM clicks WHERE sub_id=? OR txid=?`).bind(key, key).first();
-    if (seen) { await log('giga_dup'); return new Response('ok'); }
+    // Dedup via clicks txid
+    const seen = await env.DB.prepare(`SELECT 1 FROM clicks WHERE txid=?`).bind(String(q.txid)).first();
+    if (seen) { await log('mobplus_dup'); return new Response('ok'); }
 
+    const releaseAt = isoPlus(48);
     try {
-      // clicks insert first: a repeated reward throws and the whole batch rolls back
       await env.DB.batch([
-        env.DB.prepare(`INSERT INTO clicks (sub_id, telegram_id, offer_id, payout_ngn, status, txid, network) VALUES (?,?,?,?,?,?,?)`).bind(key, telegramId, 'Giga', amount, 'credited', key, 'Giga'),
-        env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(amount, amount, telegramId),
-        env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(telegramId, amount, 'offer_giga', key, 'Giga')
+        env.DB.prepare(`INSERT INTO clicks (sub_id, telegram_id, offer_id, payout_ngn, status, txid, network) VALUES (?,?,?,?,?,?,?)`).bind('mp_'+q.txid, telegramId, 'Mobplus', amount, 'pending', String(q.txid), 'Mobplus'),
+        env.DB.prepare(`INSERT INTO pending_credits (owner_id, amount, reason, ref, release_at) VALUES (?,?,?,?,?)`).bind(telegramId, amount, 'mobplus', 'mp_'+q.txid, releaseAt),
+        env.DB.prepare(`UPDATE users SET earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(amount, telegramId),
+        env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(telegramId, amount, 'offer_mobplus', 'mp_'+q.txid, 'Mobplus')
       ]);
-    } catch (e) { await log('giga_db_error_or_dup'); return new Response('ok'); }
+    } catch(e) { await log('mobplus_db_error_or_dup'); return new Response('ok'); }
 
     await checkReferralActivation(env, telegramId);
-    await log('giga_credited');
+    await log('mobplus_credited_pending');
     return new Response('ok');
   }
 
@@ -410,7 +546,7 @@ async function postback(req, env){
 
     const price = parseFloat(q.estimated_price);
     if (!Number.isFinite(price) || price <= 0) { await log('monetag_bad_amount'); return new Response('ok'); }
-    const amount = parseFloat((price * 1100).toFixed(4)); // 1100 rate
+    const amount = parseFloat((price * 1100).toFixed(4));
 
     const user = await env.DB.prepare(`SELECT 1 FROM users WHERE telegram_id=?`).bind(telegramId).first();
     if (!user) { await log('monetag_no_user'); return new Response('ok'); }
@@ -419,7 +555,6 @@ async function postback(req, env){
     if (seen) { await log('monetag_dup'); return new Response('ok'); }
 
     try {
-      // clicks insert goes first: if sub_id already exists it throws and the whole batch rolls back
       await env.DB.batch([
         env.DB.prepare(`INSERT INTO clicks (sub_id, telegram_id, offer_id, payout_ngn, status, txid, network) VALUES (?,?,?,?,?,?,?)`).bind(q.ymid, telegramId, 'Monetag', amount, 'credited', q.ymid, 'Monetag'),
         env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(amount, amount, telegramId),
@@ -432,7 +567,7 @@ async function postback(req, env){
     return new Response('ok');
   }
 
-  // ===== OTHER NETWORKS (Adslab, Offerwallapi, PubCrypto) =====
+  // ===== OTHER NETWORKS (Adslab, Offerwallapi) — instant credit =====
   const sub1 = q.sub1 || q.subId || q.userid || q.userId || q.uid || q.telegram_id;
   const payout = q.payout || q.amount || q.reward || q.reward_pb;
   const txid = q.txid || q.transId || q.transaction_id;
@@ -451,13 +586,11 @@ async function postback(req, env){
 
   let networkName = 'Unknown';
   if (q.uid) networkName = 'Adslab';
-  else if (q.subId && q.reward_pb !== undefined) networkName = 'PubCrypto';
   else if (q.subId && q.reward !== undefined) networkName = 'Offerwallapi';
 
   const amount = parseFloat(parseFloat(payout).toFixed(4));
   if (!Number.isFinite(amount) || amount <= 0) { await log('bad_amount'); return new Response('ok'); }
 
-  // Duplicate check BEFORE crediting (fixes double-credit on retries)
   const dup = await env.DB.prepare(`SELECT 1 FROM ledger WHERE ref=? AND network=? AND reason='offer_credit'`).bind(String(txid), networkName).first();
   if (dup) { await log(`dup_${networkName}`); return new Response('ok'); }
 
