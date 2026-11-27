@@ -58,6 +58,13 @@ const GG_GAP_SECONDS = 300;     // minimum seconds between starting tasks
 const GG_RESUME_MINUTES = 30;   // reopening an unfinished task inside this time does not count again
 const CHANNEL_USERNAME = '@Cryptonairaofficialchannel';
 const CHANNEL_REWARD = 50;
+
+// Linkni micro tasks (join a channel / group / mini app)
+const LINKNI_SELL_CODE = '43zeg';
+const LINKNI_REWARD = 4;          // naira per task, paid straight to the balance
+const LINKNI_DAILY_LIMIT = 10;    // paid tasks per user per UTC day
+const LINKNI_GAP_SECONDS = 60;    // minimum seconds between starting tasks
+const LINKNI_APP = 'https://t.me/linknibot/app';
 // If Golden Goose sends one of these in `event`, the pending reward is cancelled
 const GG_CANCEL_EVENTS = ['reject','rejected','cancel','cancelled','canceled','declined','fraud','trash'];
 const GG_OFFERS = {
@@ -127,6 +134,7 @@ export default {
       if(url.pathname === '/api/giga-ad' && req.method === 'POST') return await userGigaAd(req, env, cors);
       if(url.pathname === '/api/gg/task' && req.method === 'POST') return await userGGTask(req, env, cors);
       if(url.pathname === '/api/channel/verify' && req.method === 'POST') return await userChannelVerify(req, env, cors);
+      if(url.pathname === '/api/linkni/start' && req.method === 'POST') return await userLinkniStart(req, env, cors);
 
       const admin = await authAdmin(req, env);
       if(url.pathname.startsWith('/admin/') && !admin) return Response.json({error:'auth'}, {status:401, headers:cors});
@@ -270,6 +278,34 @@ async function userChannelVerify(req, env, cors){
   return Response.json({ok:true, amount: CHANNEL_REWARD}, {headers:cors});
 }
 
+async function userLinkniStart(req, env, cors){
+  const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
+  const uid = v.user.id;
+  const u = await env.DB.prepare(`SELECT banned FROM users WHERE telegram_id=?`).bind(uid).first();
+  if(!u) return Response.json({error:'no_user'}, {status:404, headers:cors});
+  if(u.banned) return Response.json({error:'banned'}, {status:403, headers:cors});
+
+  // Letters and digits only, so it cannot clash with Linkni's x_<sell>_<code> format
+  const code = 'u' + uid + 'k' + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
+  const ins = await env.DB.prepare(
+    `INSERT INTO linkni_attempts (sub_code, owner_id)
+     SELECT ?,?
+     WHERE (SELECT COUNT(*) FROM linkni_attempts WHERE owner_id=? AND paid_at IS NOT NULL AND paid_at >= date('now')) < ?
+       AND (SELECT COUNT(*) FROM linkni_attempts WHERE owner_id=? AND created_at >= date('now')) < ?
+       AND NOT EXISTS (SELECT 1 FROM linkni_attempts WHERE owner_id=? AND created_at > datetime('now', ?))`
+  ).bind(code, uid, uid, LINKNI_DAILY_LIMIT, uid, LINKNI_DAILY_LIMIT * 3, uid, '-' + LINKNI_GAP_SECONDS + ' seconds').run();
+
+  if(!ins.meta || ins.meta.changes === 0){
+    const p = await env.DB.prepare(`SELECT COUNT(*) c FROM linkni_attempts WHERE owner_id=? AND paid_at IS NOT NULL AND paid_at >= date('now')`).bind(uid).first();
+    const s = await env.DB.prepare(`SELECT COUNT(*) c FROM linkni_attempts WHERE owner_id=? AND created_at >= date('now')`).bind(uid).first();
+    if((p?.c || 0) >= LINKNI_DAILY_LIMIT || (s?.c || 0) >= LINKNI_DAILY_LIMIT * 3) return Response.json({error:'limit'}, {status:429, headers:cors});
+    const t = await env.DB.prepare(`SELECT CAST(strftime('%s', MAX(created_at)) AS INTEGER) + ? - CAST(strftime('%s','now') AS INTEGER) w FROM linkni_attempts WHERE owner_id=?`).bind(LINKNI_GAP_SECONDS, uid).first();
+    return Response.json({error:'wait', seconds: Math.max(1, t?.w || LINKNI_GAP_SECONDS)}, {status:429, headers:cors});
+  }
+  const paid = await env.DB.prepare(`SELECT COUNT(*) c FROM linkni_attempts WHERE owner_id=? AND paid_at IS NOT NULL AND paid_at >= date('now')`).bind(uid).first();
+  return Response.json({ok:true, url: LINKNI_APP + '?startapp=x_' + LINKNI_SELL_CODE + '_' + code, left: Math.max(0, LINKNI_DAILY_LIMIT - (paid?.c || 0))}, {headers:cors});
+}
+
 async function userSync(req, env, cors){
   const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
   const uid = v.user.id;
@@ -307,8 +343,9 @@ async function userMe(req, env, cors){
   const pendRow = await env.DB.prepare(`SELECT COALESCE(SUM(amount),0) s FROM holds WHERE owner_id=? AND status='pending'`).bind(uid).first();
   const ggRow = await env.DB.prepare(`SELECT COUNT(*) c FROM gg_user_tasks WHERE owner_id=? AND started_at >= date('now')`).bind(uid).first();
   const chanRow = await env.DB.prepare(`SELECT 1 FROM channel_joins WHERE telegram_id=?`).bind(uid).first();
+  const lkRow = await env.DB.prepare(`SELECT COUNT(*) c FROM linkni_attempts WHERE owner_id=? AND paid_at IS NOT NULL AND paid_at >= date('now')`).bind(uid).first();
   const rc = refs.results.reduce((a,r) => { a[r.activated?'qualified':'pending'] = r.c; return a; }, {});
-  return Response.json({ uid, username: v.user.username||v.user.first_name, balance: u2?.balance ?? 0, earned_total: u2?.earned_total ?? 0, tasks_done: u2?.tasks_done ?? 0, streak: u2?.streak ?? 0, last_checkin: u2?.last_checkin ?? null, wallet: w || null, referrals: rc, history: hist.results, unread: unread?.c || 0, pending: pendRow?.s || 0, gg_left: Math.max(0, GG_DAILY_LIMIT - (ggRow?.c || 0)), channel_joined: !!chanRow }, {headers:cors});
+  return Response.json({ uid, username: v.user.username||v.user.first_name, balance: u2?.balance ?? 0, earned_total: u2?.earned_total ?? 0, tasks_done: u2?.tasks_done ?? 0, streak: u2?.streak ?? 0, last_checkin: u2?.last_checkin ?? null, wallet: w || null, referrals: rc, history: hist.results, unread: unread?.c || 0, pending: pendRow?.s || 0, gg_left: Math.max(0, GG_DAILY_LIMIT - (ggRow?.c || 0)), channel_joined: !!chanRow, linkni_left: Math.max(0, LINKNI_DAILY_LIMIT - (lkRow?.c || 0)) }, {headers:cors});
 }
 
 async function userCheckin(req, env, cors){
@@ -419,6 +456,7 @@ async function adminDelete(req, env, cors){
     env.DB.prepare(`DELETE FROM holds WHERE owner_id=?`).bind(telegram_id),
     env.DB.prepare(`DELETE FROM gg_user_tasks WHERE owner_id=?`).bind(telegram_id),
     env.DB.prepare(`DELETE FROM channel_joins WHERE telegram_id=?`).bind(telegram_id),
+    env.DB.prepare(`DELETE FROM linkni_attempts WHERE owner_id=?`).bind(telegram_id),
     env.DB.prepare(`DELETE FROM checkins WHERE telegram_id=?`).bind(telegram_id),
     env.DB.prepare(`DELETE FROM referrals WHERE referrer_id=? OR referee_id=?`).bind(telegram_id, telegram_id),
     env.DB.prepare(`DELETE FROM users WHERE telegram_id=?`).bind(telegram_id)
@@ -477,6 +515,38 @@ async function postback(req, env){
   // 1. TEST PING (matches param names only, not any text in the URL)
   if (url.searchParams.has('test') || url.searchParams.has('test_user') || url.searchParams.get('debug') === '1') {
     await log('test_ping_ok');
+    return new Response('ok');
+  }
+
+  // LINKNI webhook (POST with a JSON body). Must be handled before JSON postbacks are ignored.
+  if (url.searchParams.get('network') === 'linkni') {
+    const ls = env.LINKNI_POSTBACK_SECRET;
+    if (!ls || url.searchParams.get('secret') !== ls) { await log('linkni_bad_secret'); return new Response('forbidden', {status:403}); }
+    let body = null;
+    try { body = await req.json(); } catch (e) {}
+    if (!body) { await log('linkni_bad_body'); return new Response('ok'); }
+
+    const status = String(body.status || '');
+    if (status !== 'subscribed') { await log('linkni_' + (status || 'nostatus').replace(/[^a-z_]/gi, '').slice(0, 24)); return new Response('ok'); }
+    const subCode = String(body.sub_code || '');
+    const luid = parseInt(body.user_id, 10);
+    if (!subCode || !Number.isFinite(luid)) { await log('linkni_bad_fields'); return new Response('ok'); }
+    if (body.sell_code && String(body.sell_code) !== LINKNI_SELL_CODE) { await log('linkni_bad_sell_code'); return new Response('ok'); }
+
+    // Pay once: only a real attempt created by our app, for this user, and only the first time
+    const flip = await env.DB.prepare(`UPDATE linkni_attempts SET paid_at=datetime('now'), status='subscribed' WHERE sub_code=? AND owner_id=? AND paid_at IS NULL AND created_at > datetime('now','-1 day')`).bind(subCode, luid).run();
+    if (!flip.meta || flip.meta.changes === 0) { await log('linkni_no_attempt_or_dup'); return new Response('ok'); }
+    try {
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+1 WHERE telegram_id=?`).bind(LINKNI_REWARD, LINKNI_REWARD, luid),
+        env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(luid, LINKNI_REWARD, 'offer_linkni', subCode, 'Linkni')
+      ]);
+    } catch (e) {
+      await env.DB.prepare(`UPDATE linkni_attempts SET paid_at=NULL WHERE sub_code=?`).bind(subCode).run();
+      await log('linkni_db_error'); return new Response('ok');
+    }
+    await checkReferralActivation(env, luid);
+    await log('linkni_credited');
     return new Response('ok');
   }
 
