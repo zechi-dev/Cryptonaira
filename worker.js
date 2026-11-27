@@ -65,12 +65,6 @@ const LINKNI_REWARD = 4;          // naira per task, paid straight to the balanc
 const LINKNI_DAILY_LIMIT = 10;    // paid tasks per user per UTC day
 const LINKNI_GAP_SECONDS = 60;    // minimum seconds between starting tasks
 const LINKNI_APP = 'https://t.me/linknibot/app';
-
-// Barzha task widget (widget 70): paid when Barzha's postback confirms the task
-const BARZHA_NOW = 5;             // naira added to the balance straight away
-const BARZHA_LATER = 5;           // naira held and added after BARZHA_HOLD_HOURS
-const BARZHA_HOLD_HOURS = 24;
-const BARZHA_DAILY_LIMIT = 20;    // confirmed tasks paid per user per UTC day
 // If Golden Goose sends one of these in `event`, the pending reward is cancelled
 const GG_CANCEL_EVENTS = ['reject','rejected','cancel','cancelled','canceled','declined','fraud','trash'];
 const GG_OFFERS = {
@@ -201,7 +195,7 @@ async function releaseHolds(env, uid){
   const due = `owner_id=? AND status='pending' AND release_at<=datetime('now')`;
   const sum = `(SELECT COALESCE(SUM(amount),0) FROM holds WHERE ${due})`;
   const res = await env.DB.batch([
-    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) SELECT ?, s, 'hold_released', 'rel_'||datetime('now'), 'Pending' FROM (SELECT SUM(amount) s FROM holds WHERE ${due}) WHERE s>0`).bind(uid, uid),
+    env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) SELECT ?, s, 'hold_released', 'rel_'||datetime('now'), 'Golden Goose' FROM (SELECT SUM(amount) s FROM holds WHERE ${due}) WHERE s>0`).bind(uid, uid),
     env.DB.prepare(`UPDATE users SET balance=balance+${sum}, earned_total=earned_total+${sum}, tasks_done=tasks_done+(SELECT COUNT(*) FROM holds WHERE ${due}) WHERE telegram_id=?`).bind(uid, uid, uid, uid),
     env.DB.prepare(`UPDATE holds SET status='released', released_at=datetime('now') WHERE ${due}`).bind(uid)
   ]);
@@ -521,35 +515,6 @@ async function postback(req, env){
   // 1. TEST PING (matches param names only, not any text in the URL)
   if (url.searchParams.has('test') || url.searchParams.has('test_user') || url.searchParams.get('debug') === '1') {
     await log('test_ping_ok');
-    return new Response('ok');
-  }
-
-  // BARZHA task postback (GET with query values, or POST with JSON on the direct worker URL)
-  if (url.searchParams.get('network') === 'barzha') {
-    const bs = env.BARZHA_POSTBACK_SECRET;
-    if (!bs || url.searchParams.get('secret') !== bs) { await log('barzha_bad_secret'); return new Response('forbidden', {status:403}); }
-    const data = Object.fromEntries(url.searchParams);
-    if (req.method === 'POST') { try { Object.assign(data, await req.json()); } catch (e) {} }
-    const pick = (...keys) => { for (const k of keys) { if (data[k] !== undefined && data[k] !== '') return String(data[k]); } return ''; };
-    const buid = pick('telegram_id', 'user_id', 'userid', 'userId', 'uid', 'sub1', 'subId');
-    const camp = pick('ad_subscription_campaign_id', 'campaign_id', 'sub_ad_campaign_id', 'task_id', 'offer_id', 'id').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60);
-    if (!/^\d+$/.test(buid) || !camp) { await log('barzha_bad_params:' + Object.keys(data).filter(k => k !== 'secret').join(',').slice(0, 70)); return new Response('ok'); }
-    const bid = parseInt(buid, 10);
-    const buser = await env.DB.prepare(`SELECT 1 FROM users WHERE telegram_id=?`).bind(bid).first();
-    if (!buser) { await log('barzha_no_user'); return new Response('ok'); }
-    const today = await env.DB.prepare(`SELECT COUNT(*) c FROM barzha_tasks WHERE owner_id=? AND created_at >= date('now')`).bind(bid).first();
-    if ((today?.c || 0) >= BARZHA_DAILY_LIMIT) { await log('barzha_daily_limit'); return new Response('ok'); }
-    try {
-      // barzha_tasks has a primary key on (owner_id, campaign_id): a repeat fails and the whole batch rolls back
-      await env.DB.batch([
-        env.DB.prepare(`INSERT INTO barzha_tasks (owner_id, campaign_id) VALUES (?,?)`).bind(bid, camp),
-        env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+? WHERE telegram_id=?`).bind(BARZHA_NOW, BARZHA_NOW, bid),
-        env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(bid, BARZHA_NOW, 'barzha_task', 'bz_' + bid + '_' + camp, 'Barzha'),
-        env.DB.prepare(`INSERT INTO holds (owner_id, amount, source, offer_code, ref, release_at, note) VALUES (?,?,?,?,?, datetime('now', ?), ?)`).bind(bid, BARZHA_LATER, 'barzha', camp, 'bzh_' + bid + '_' + camp, '+' + BARZHA_HOLD_HOURS + ' hours', '')
-      ]);
-    } catch (e) { await log('barzha_dup_or_error'); return new Response('ok'); }
-    await checkReferralActivation(env, bid);
-    await log('barzha_credited');
     return new Response('ok');
   }
 
