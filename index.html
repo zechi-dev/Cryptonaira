@@ -152,6 +152,14 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
     <button class="btn" id="chanVerifyBtn" onclick="verifyChannel()">I joined, verify</button>
   </div>
 
+  <div class="sec-title">Micro Tasks</div>
+  <div class="card">
+    <b>Join &amp; Earn</b>
+    <div class="meta" style="margin-bottom:4px;">Join a Telegram channel, group or mini app and earn &#8358;4. Please stay subscribed.</div>
+    <div class="meta" id="linkniLeft"></div>
+    <button class="btn" id="linkniBtn" onclick="linkniStart()">Start Task</button>
+  </div>
+
   <div class="sec-title">Golden Goose</div>
   <div class="sub">Pick your network, finish the task and earn &#8358;250. Rewards show as Pending and are added to your balance after 72 hours.</div>
   <div class="meta" id="ggLeft" style="margin-top:6px"></div>
@@ -335,6 +343,7 @@ function render() {
   const pendTxt = pend > 0 ? 'Pending: ' + N(pend) + ' (added after 72 hours)' : '';
   $('pendingHome').textContent = pendTxt; $('pendingWallet').textContent = pendTxt;
   $('ggLeft').textContent = 'Tasks left today: ' + (me.gg_left === undefined ? 6 : me.gg_left) + ' of 6';
+  $('linkniLeft').textContent = 'Tasks left today: ' + (me.linkni_left === undefined ? 10 : me.linkni_left) + ' of 10';
   const cj = !!me.channel_joined;
   $('chanVerifyBtn').disabled = cj; $('chanVerifyBtn').textContent = cj ? 'Channel reward claimed' : 'I joined, verify';
   $('chanJoinBtn').style.display = cj ? 'none' : 'block';
@@ -441,6 +450,34 @@ async function verifyChannel() {
   else toast('Could not verify. Try again');
   quietCredit = true;
   try { await refresh(); } finally { quietCredit = false; btn.disabled = !!(me && me.channel_joined); }
+}
+
+// ==========================================
+// LINKNI MICRO TASKS (join channel / group / mini app)
+// The worker makes a one-time code for each attempt and pays when Linkni's webhook confirms it.
+// ==========================================
+let linkniBusy = false;
+async function linkniStart() {
+  if (linkniBusy) return;
+  const uid = (me && me.uid) ? me.uid : UID;
+  if (!uid || uid === '0') return toast('Please wait for your ID to load');
+  linkniBusy = true;
+  try {
+    toast('Finding a task...');
+    const r = await call('/api/linkni/start', {});
+    if (r.ok && r.url) {
+      if (tg && tg.openTelegramLink) { tg.openTelegramLink(r.url); }
+      else if (tg && tg.openLink) { tg.openLink(r.url); }
+      else { window.open(r.url, '_blank'); }
+      toast('Join what you are shown, then come back. Your reward arrives automatically.');
+      setTimeout(() => { refresh(); }, 8000);
+      setTimeout(() => { refresh(); }, 20000);
+    }
+    else if (r.error === 'limit') toast('You have used your 10 tasks today. Come back tomorrow');
+    else if (r.error === 'wait') { const s = r.seconds || 60; toast('Next task in ' + s + ' seconds'); }
+    else if (r.error === 'banned') toast('Your account cannot do tasks');
+    else toast('Could not load a task. Try again');
+  } finally { linkniBusy = false; }
 }
 
 // ==========================================
