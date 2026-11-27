@@ -61,7 +61,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 #loader b{margin-top:24px;font-family:var(--serif);font-weight:400;font-size:34px;letter-spacing:9px;padding-left:9px}
 #loader p{color:var(--mute);font-size:12px;margin-top:8px}
 .bar{width:120px;height:1px;background:var(--hair);margin-top:28px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--gold);animation:fill 2s forwards}@keyframes fill{to{width:100%}}
-.admaster-title{font-size:13px}.admaster-text{color:var(--mute);font-size:12px;line-height:1.5;margin-top:4px}
+.admaster-title{font-size:13px}.admaster-text{color:var(--mute);font-size:12px;line-height:1.5;margin-top:4px}.admaster-button{width:100%;margin-top:12px;background:var(--gold);color:#16110A;padding:15px;border-radius:12px;font-weight:700;font-size:14px}
 .sec-title{font-family:var(--serif);font-size:20px;color:var(--gold);margin:24px 0 10px;border-bottom:1px solid var(--line);padding-bottom:8px;}
 </style>
 </head>
@@ -164,8 +164,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
   <div class="card">
     <b>Telegram Tasks</b>
-    <div class="meta" style="margin-bottom:12px;">Join Telegram channels and earn &#8358;10 per task (&#8358;5 now, &#8358;5 after 24 hours). Please stay subscribed.</div>
-    <div id="barzhaBox" task-widget-id="70"><div class="meta">Loading tasks...</div></div>
+    <div class="meta" style="margin-bottom:12px;">Complete the task below.</div>
+    <div task-widget-id="70"></div>
   </div>
 
 
@@ -490,42 +490,6 @@ async function linkniStart() {
 }
 
 // ==========================================
-// BARZHA TASK WIDGET (widget 70)
-// Barzha's postback tells the worker when a task is confirmed; the app only shows the tasks.
-// ==========================================
-document.addEventListener('DOMContentLoaded', function () {
-  const box = $('barzhaBox');
-  if (!box) return;
-  if (typeof TaskWidget !== 'function') { box.textContent = 'Tasks are not available right now.'; return; }
-  let widget = null;
-  const onTasks = data => {
-    clear(box);
-    const tasks = Array.isArray(data) ? data : [];
-    if (!tasks.length) { box.appendChild(h('div', 'meta', 'No tasks available right now. Try again later.')); }
-    tasks.forEach(el => {
-      const row = h('div', 'row'); row.style.display = 'block'; row.style.cursor = 'default';
-      const t = h('p', 'admaster-title'); t.appendChild(h('strong', '', String(el.title || 'Task')));
-      row.appendChild(t);
-      row.appendChild(h('p', 'admaster-text', String(el.description || '')));
-      const b = h('button', 'btn admaster-button', String(el.button_text || 'Join'));
-      b.type = 'button';
-      b.setAttribute('sub-ad-campaign-id', String(el.ad_subscription_campaign_id));
-      row.appendChild(b);
-      box.appendChild(row);
-    });
-    try { if (widget) widget.done(); } catch (e) { console.error(e); }
-  };
-  const onError = error => { console.log(error); clear(box); box.appendChild(h('div', 'meta', 'No tasks available right now. Try again later.')); };
-  try {
-    widget = new TaskWidget(70, { receiveTaskWidgetCallback: onTasks, receiveTaskWidgetErrorCallback: onError });
-    widget.initWidget();
-  } catch (e) { console.error(e); box.textContent = 'Tasks are not available right now.'; }
-  box.addEventListener('click', e => {
-    if (e.target.closest('.admaster-button')) { setTimeout(() => { refresh(); }, 15000); setTimeout(() => { refresh(); }, 40000); }
-  });
-});
-
-// ==========================================
 // IFRAMES (Offerwallapi only)
 // ==========================================
 let iframesLoaded = false;
@@ -677,6 +641,34 @@ document.addEventListener('visibilitychange', () => {
     }
   } catch (e) { console.error(e); }
 })();
+</script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        let taskWidgetElement = document.querySelector('[task-widget-id]');
+        let receiveTaskWidgetCallback = data => {
+            data.forEach(element => {
+                taskWidgetElement.innerHTML =
+                    `<p class="admaster-title"><strong>${element.title}</strong></p>
+                    <p class="admaster-text">${element.description}</p>
+                    <button type="button" class="admaster-button" sub-ad-campaign-id="${element.ad_subscription_campaign_id}">
+                    ${element.button_text}</button>`;
+            });
+            taskWidget.done();
+        };
+
+        let receiveTaskWidgetErrorCallback = error => {
+            console.log(error);
+        };
+
+        let taskWidgetId = taskWidgetElement.getAttribute('task-widget-id');
+
+        var taskWidget = new TaskWidget(70, {
+            receiveTaskWidgetCallback: receiveTaskWidgetCallback,
+            receiveTaskWidgetErrorCallback: receiveTaskWidgetErrorCallback
+        });
+
+        taskWidget.initWidget();
+    });
 </script>
 </body>
 </html>
