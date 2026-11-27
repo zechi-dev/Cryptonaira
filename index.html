@@ -160,6 +160,14 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
     <button class="btn" id="linkniBtn" onclick="linkniStart()">Start Task</button>
   </div>
 
+  <div class="card">
+    <b>Telegram Tasks</b>
+    <div class="meta" style="margin-bottom:4px;">Join channels and bots and earn up to &#8358;10 per task. Please stay subscribed.</div>
+    <div class="meta" id="flyerLeft"></div>
+    <button class="btn" id="flyerLoadBtn" onclick="flyerLoad()">Show tasks</button>
+    <div id="flyerList"></div>
+  </div>
+
   <div class="sec-title">Golden Goose</div>
   <div class="sub">Pick your network, finish the task and earn &#8358;250. Rewards show as Pending and are added to your balance after 72 hours.</div>
   <div class="meta" id="ggLeft" style="margin-top:6px"></div>
@@ -344,6 +352,7 @@ function render() {
   $('pendingHome').textContent = pendTxt; $('pendingWallet').textContent = pendTxt;
   $('ggLeft').textContent = 'Tasks left today: ' + (me.gg_left === undefined ? 6 : me.gg_left) + ' of 6';
   $('linkniLeft').textContent = 'Tasks left today: ' + (me.linkni_left === undefined ? 10 : me.linkni_left) + ' of 10';
+  $('flyerLeft').textContent = 'Tasks left today: ' + (me.flyer_left === undefined ? 10 : me.flyer_left) + ' of 10';
   const cj = !!me.channel_joined;
   $('chanVerifyBtn').disabled = cj; $('chanVerifyBtn').textContent = cj ? 'Channel reward claimed' : 'I joined, verify';
   $('chanJoinBtn').style.display = cj ? 'none' : 'block';
@@ -478,6 +487,64 @@ async function linkniStart() {
     else if (r.error === 'banned') toast('Your account cannot do tasks');
     else toast('Could not load a task. Try again');
   } finally { linkniBusy = false; }
+}
+
+// ==========================================
+// FLYER TELEGRAM TASKS
+// The worker asks Flyer for tasks and checks each one itself. 5 naira is paid when Flyer shows the task
+// as done and 5 more when it shows it as paid. Leaving the channel removes the reward.
+// ==========================================
+const FLYER_TYPES = { 'subscribe channel': 'Join a channel', 'start bot': 'Start a bot', 'give boost': 'Boost a channel', 'follow link': 'Open a link', 'perform action': 'Do an action', 'view posts': 'View posts' };
+let flyerBusy = false;
+function flyerOpen(link) {
+  if (/^https:\/\/t\.me\//.test(link) && tg && tg.openTelegramLink) { tg.openTelegramLink(link); }
+  else if (tg && tg.openLink) { tg.openLink(link); }
+  else { window.open(link, '_blank'); }
+}
+function flyerRender(tasks) {
+  const box = $('flyerList'); clear(box);
+  if (!tasks.length) { const m = h('div', 'meta', 'No tasks available right now. Try again later.'); m.style.marginTop = '12px'; box.appendChild(m); return; }
+  tasks.forEach(t => {
+    const row = h('div', 'row'); row.style.display = 'block'; row.style.cursor = 'default';
+    const top = h('div', ''); top.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:10px';
+    top.appendChild(h('b', '', (FLYER_TYPES[t.type] || 'Task') + (t.name ? ': ' + t.name : '')));
+    top.appendChild(h('span', 'badge' + (t.waiting ? ' ok' : ''), t.waiting ? 'Waiting' : 'New'));
+    row.appendChild(top);
+    const btns = h('div', ''); btns.style.cssText = 'display:flex;gap:8px;margin-top:10px';
+    const open = h('button', 'btn ghost', 'Open'); open.style.margin = '0'; open.onclick = () => flyerOpen(t.link);
+    const chk = h('button', 'btn', 'Check'); chk.style.margin = '0'; chk.onclick = () => flyerCheck(t.signature, chk);
+    btns.appendChild(open); btns.appendChild(chk); row.appendChild(btns);
+    box.appendChild(row);
+  });
+}
+async function flyerLoad() {
+  if (flyerBusy) return;
+  const uid = (me && me.uid) ? me.uid : UID;
+  if (!uid || uid === '0') return toast('Please wait for your ID to load');
+  flyerBusy = true;
+  try {
+    toast('Finding tasks...');
+    const r = await call('/api/flyer/tasks', {});
+    if (r.error === 'banned') return toast('Your account cannot do tasks');
+    if (r.limit) { flyerRender([]); return toast('You have used your 10 tasks today. Come back tomorrow'); }
+    flyerRender(r.tasks || []);
+  } finally { flyerBusy = false; }
+}
+async function flyerCheck(sig, btn) {
+  btn.disabled = true;
+  try {
+    const r = await call('/api/flyer/check', { signature: sig });
+    if (r.status === 'incomplete') toast('Not done yet. Finish the task, then check again');
+    else if (r.status === 'waiting') toast(r.paid > 0 ? 'Task done! +' + N(r.paid) + ' now, more after Flyer confirms' : 'Waiting for Flyer to confirm the rest');
+    else if (r.status === 'complete') toast(r.paid > 0 ? 'Task paid! +' + N(r.paid) : 'This task is already paid');
+    else if (r.status === 'abort') toast('You left, so the reward was removed');
+    else if (r.status === 'unavailable') toast('This task is no longer available');
+    else if (r.status === 'limit') toast('You have used your 10 tasks today. Come back tomorrow');
+    else toast('Could not check this task. Try again');
+    quietCredit = true;
+    try { await refresh(); } finally { quietCredit = false; }
+    flyerBusy = false; await flyerLoad();
+  } finally { btn.disabled = false; }
 }
 
 // ==========================================
