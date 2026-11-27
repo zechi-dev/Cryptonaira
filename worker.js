@@ -65,6 +65,13 @@ const LINKNI_REWARD = 4;          // naira per task, paid straight to the balanc
 const LINKNI_DAILY_LIMIT = 10;    // paid tasks per user per UTC day
 const LINKNI_GAP_SECONDS = 60;    // minimum seconds between starting tasks
 const LINKNI_APP = 'https://t.me/linknibot/app';
+
+// Flyer micro tasks (join channels / start bots), checked by the worker with Flyer's API
+const FLYER_API = 'https://api.flyerhubs.com';
+const FLYER_PAY1 = 5;            // naira paid when Flyer shows the task as done ("waiting")
+const FLYER_PAY2 = 5;            // naira paid when Flyer shows it as paid ("complete")
+const FLYER_DAILY_LIMIT = 10;    // tasks per user per UTC day (counted when the first part is paid)
+const FLYER_SHOW = 3;            // tasks requested from Flyer at a time
 // If Golden Goose sends one of these in `event`, the pending reward is cancelled
 const GG_CANCEL_EVENTS = ['reject','rejected','cancel','cancelled','canceled','declined','fraud','trash'];
 const GG_OFFERS = {
@@ -135,6 +142,8 @@ export default {
       if(url.pathname === '/api/gg/task' && req.method === 'POST') return await userGGTask(req, env, cors);
       if(url.pathname === '/api/channel/verify' && req.method === 'POST') return await userChannelVerify(req, env, cors);
       if(url.pathname === '/api/linkni/start' && req.method === 'POST') return await userLinkniStart(req, env, cors);
+      if(url.pathname === '/api/flyer/tasks' && req.method === 'POST') return await userFlyerTasks(req, env, cors);
+      if(url.pathname === '/api/flyer/check' && req.method === 'POST') return await userFlyerCheck(req, env, cors);
 
       const admin = await authAdmin(req, env);
       if(url.pathname.startsWith('/admin/') && !admin) return Response.json({error:'auth'}, {status:401, headers:cors});
@@ -306,6 +315,94 @@ async function userLinkniStart(req, env, cors){
   return Response.json({ok:true, url: LINKNI_APP + '?startapp=x_' + LINKNI_SELL_CODE + '_' + code, left: Math.max(0, LINKNI_DAILY_LIMIT - (paid?.c || 0))}, {headers:cors});
 }
 
+async function flyerCall(env, path, body){
+  if(!env.FLYER_API_KEY) return null;
+  try {
+    const r = await fetch(FLYER_API + path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(Object.assign({ key: env.FLYER_API_KEY }, body)) });
+    return await r.json();
+  } catch(e) { return null; }
+}
+async function flyerDoneToday(env, uid){
+  const c = await env.DB.prepare(`SELECT COUNT(*) c FROM flyer_tasks WHERE owner_id=? AND first_paid_at >= date('now')`).bind(uid).first();
+  return c?.c || 0;
+}
+// Pays one part (1 or 2) once. Returns the naira paid, or 0.
+async function flyerPay(env, uid, sig, part){
+  const col = part === 1 ? 'paid1' : 'paid2';
+  const amt = part === 1 ? FLYER_PAY1 : FLYER_PAY2;
+  const extra = part === 1 ? ", first_paid_at=datetime('now')" : '';
+  const f = await env.DB.prepare(`UPDATE flyer_tasks SET ${col}=1${extra} WHERE owner_id=? AND signature=? AND ${col}=0 AND reversed=0`).bind(uid, sig).run();
+  if(!f.meta || f.meta.changes === 0) return 0;
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE users SET balance=balance+?, earned_total=earned_total+?, tasks_done=tasks_done+? WHERE telegram_id=?`).bind(amt, amt, part === 2 ? 1 : 0, uid),
+      env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(uid, amt, 'flyer_task', 'fl' + part + '_' + sig, 'Flyer')
+    ]);
+  } catch(e) {
+    await env.DB.prepare(`UPDATE flyer_tasks SET ${col}=0 WHERE owner_id=? AND signature=?`).bind(uid, sig).run();
+    return 0;
+  }
+  await checkReferralActivation(env, uid);
+  return amt;
+}
+
+async function userFlyerTasks(req, env, cors){
+  const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
+  const uid = v.user.id;
+  const u = await env.DB.prepare(`SELECT banned FROM users WHERE telegram_id=?`).bind(uid).first();
+  if(!u) return Response.json({error:'no_user'}, {status:404, headers:cors});
+  if(u.banned) return Response.json({error:'banned'}, {status:403, headers:cors});
+  if(await flyerDoneToday(env, uid) >= FLYER_DAILY_LIMIT) return Response.json({tasks:[], limit:true}, {headers:cors});
+
+  const res = await flyerCall(env, '/get_tasks', { user_id: uid, language_code: v.user.language_code || 'en', limit: FLYER_SHOW });
+  const list = (res && Array.isArray(res.result)) ? res.result : [];
+  const out = [];
+  for(const t of list){
+    if(!t || !t.signature || !Array.isArray(t.links) || !t.links[0]) continue;
+    await env.DB.prepare(`INSERT OR IGNORE INTO flyer_tasks (owner_id, signature, task_type, name, link) VALUES (?,?,?,?,?)`).bind(uid, String(t.signature), String(t.task || ''), String(t.name || ''), String(t.links[0])).run();
+    const row = await env.DB.prepare(`SELECT paid1, paid2, reversed FROM flyer_tasks WHERE owner_id=? AND signature=?`).bind(uid, String(t.signature)).first();
+    if(row && (row.paid2 || row.reversed)) continue;
+    out.push({ signature: String(t.signature), type: String(t.task || ''), name: String(t.name || ''), link: String(t.links[0]), waiting: !!(row && row.paid1) });
+  }
+  return Response.json({tasks: out, left: Math.max(0, FLYER_DAILY_LIMIT - await flyerDoneToday(env, uid))}, {headers:cors});
+}
+
+async function userFlyerCheck(req, env, cors){
+  const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
+  const uid = v.user.id;
+  const u = await env.DB.prepare(`SELECT banned FROM users WHERE telegram_id=?`).bind(uid).first();
+  if(!u) return Response.json({error:'no_user'}, {status:404, headers:cors});
+  if(u.banned) return Response.json({error:'banned'}, {status:403, headers:cors});
+  const { signature } = await req.json().catch(() => ({}));
+  const sig = String(signature || '');
+  const row = sig ? await env.DB.prepare(`SELECT * FROM flyer_tasks WHERE owner_id=? AND signature=?`).bind(uid, sig).first() : null;
+  if(!row) return Response.json({error:'not_found'}, {status:404, headers:cors});
+
+  const res = await flyerCall(env, '/check_task', { signature: sig });
+  const st = res ? res.result : null;
+  if(!st) return Response.json({status:'error'}, {headers:cors});
+
+  let paid = 0;
+  if(st === 'waiting' || st === 'complete'){
+    if(!row.paid1){
+      if(await flyerDoneToday(env, uid) >= FLYER_DAILY_LIMIT) return Response.json({status:'limit'}, {headers:cors});
+      paid += await flyerPay(env, uid, sig, 1);
+    }
+    if(st === 'complete') paid += await flyerPay(env, uid, sig, 2);
+  } else if(st === 'abort'){
+    const f = await env.DB.prepare(`UPDATE flyer_tasks SET reversed=1, status='abort' WHERE owner_id=? AND signature=? AND reversed=0 AND (paid1=1 OR paid2=1)`).bind(uid, sig).run();
+    if(f.meta && f.meta.changes > 0){
+      const back = (row.paid1 ? FLYER_PAY1 : 0) + (row.paid2 ? FLYER_PAY2 : 0);
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE users SET balance=balance-?, earned_total=earned_total-? WHERE telegram_id=?`).bind(back, back, uid),
+        env.DB.prepare(`INSERT INTO ledger (owner_id,delta,reason,ref,network) VALUES (?,?,?,?,?)`).bind(uid, -back, 'flyer_reversed', 'flr_' + sig, 'Flyer')
+      ]);
+    }
+  }
+  if(st !== 'abort') await env.DB.prepare(`UPDATE flyer_tasks SET status=? WHERE owner_id=? AND signature=? AND reversed=0`).bind(String(st), uid, sig).run();
+  return Response.json({status: st, paid}, {headers:cors});
+}
+
 async function userSync(req, env, cors){
   const v = await authUser(req, env); if(!v) return Response.json({error:'auth'}, {status:401, headers:cors});
   const uid = v.user.id;
@@ -343,9 +440,10 @@ async function userMe(req, env, cors){
   const pendRow = await env.DB.prepare(`SELECT COALESCE(SUM(amount),0) s FROM holds WHERE owner_id=? AND status='pending'`).bind(uid).first();
   const ggRow = await env.DB.prepare(`SELECT COUNT(*) c FROM gg_user_tasks WHERE owner_id=? AND started_at >= date('now')`).bind(uid).first();
   const chanRow = await env.DB.prepare(`SELECT 1 FROM channel_joins WHERE telegram_id=?`).bind(uid).first();
+  const flyerDone = await flyerDoneToday(env, uid);
   const lkRow = await env.DB.prepare(`SELECT COUNT(*) c FROM linkni_attempts WHERE owner_id=? AND paid_at IS NOT NULL AND paid_at >= date('now')`).bind(uid).first();
   const rc = refs.results.reduce((a,r) => { a[r.activated?'qualified':'pending'] = r.c; return a; }, {});
-  return Response.json({ uid, username: v.user.username||v.user.first_name, balance: u2?.balance ?? 0, earned_total: u2?.earned_total ?? 0, tasks_done: u2?.tasks_done ?? 0, streak: u2?.streak ?? 0, last_checkin: u2?.last_checkin ?? null, wallet: w || null, referrals: rc, history: hist.results, unread: unread?.c || 0, pending: pendRow?.s || 0, gg_left: Math.max(0, GG_DAILY_LIMIT - (ggRow?.c || 0)), channel_joined: !!chanRow, linkni_left: Math.max(0, LINKNI_DAILY_LIMIT - (lkRow?.c || 0)) }, {headers:cors});
+  return Response.json({ uid, username: v.user.username||v.user.first_name, balance: u2?.balance ?? 0, earned_total: u2?.earned_total ?? 0, tasks_done: u2?.tasks_done ?? 0, streak: u2?.streak ?? 0, last_checkin: u2?.last_checkin ?? null, wallet: w || null, referrals: rc, history: hist.results, unread: unread?.c || 0, pending: pendRow?.s || 0, gg_left: Math.max(0, GG_DAILY_LIMIT - (ggRow?.c || 0)), channel_joined: !!chanRow, linkni_left: Math.max(0, LINKNI_DAILY_LIMIT - (lkRow?.c || 0)), flyer_left: Math.max(0, FLYER_DAILY_LIMIT - flyerDone) }, {headers:cors});
 }
 
 async function userCheckin(req, env, cors){
@@ -457,6 +555,7 @@ async function adminDelete(req, env, cors){
     env.DB.prepare(`DELETE FROM gg_user_tasks WHERE owner_id=?`).bind(telegram_id),
     env.DB.prepare(`DELETE FROM channel_joins WHERE telegram_id=?`).bind(telegram_id),
     env.DB.prepare(`DELETE FROM linkni_attempts WHERE owner_id=?`).bind(telegram_id),
+    env.DB.prepare(`DELETE FROM flyer_tasks WHERE owner_id=?`).bind(telegram_id),
     env.DB.prepare(`DELETE FROM checkins WHERE telegram_id=?`).bind(telegram_id),
     env.DB.prepare(`DELETE FROM referrals WHERE referrer_id=? OR referee_id=?`).bind(telegram_id, telegram_id),
     env.DB.prepare(`DELETE FROM users WHERE telegram_id=?`).bind(telegram_id)
